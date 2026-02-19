@@ -46,26 +46,27 @@ export const parseSupplierCSV = (csvText) => {
     // Skip header row
     const dataLines = lines.slice(1);
 
-    const suppliers = [];
+    const suppliersMap = new Map();
     const errors = [];
 
     dataLines.forEach((line, index) => {
-        const lineNum = index + 2; // +2 because we skipped header and arrays are 0-indexed
+        const lineNum = index + 2;
 
-        if (!line.trim()) return; // Skip empty lines
+        if (!line.trim()) return;
 
         try {
-            // Parse CSV line (handle quoted fields)
             const fields = parseCSVLine(line);
 
-            if (fields.length < 3) {
-                errors.push(`Line ${lineNum}: Not enough fields (minimum: Name, Categories, Location)`);
+            if (fields.length < 2) {
+                errors.push(`Line ${lineNum}: Missing required fields (Name and Categories)`);
                 return;
             }
 
-            const [name, categories, location, contact = '', whatsapp = ''] = fields;
+            const [name, categories, location = '', contact = '', whatsapp = ''] = fields;
+            const trimmedName = name.trim();
+            const normalizedName = trimmedName.toLowerCase();
 
-            if (!name.trim()) {
+            if (!trimmedName) {
                 errors.push(`Line ${lineNum}: Supplier name is required`);
                 return;
             }
@@ -75,21 +76,37 @@ export const parseSupplierCSV = (csvText) => {
                 return;
             }
 
-            const supplier = {
-                id: generateId(),
-                name: name.trim(),
-                categories: categories.split(';').map(c => c.trim()).filter(Boolean),
-                location: location.trim(),
-                contact: contact.trim(),
-                whatsapp: whatsapp.trim()
-            };
+            const newCategories = categories.split(';').map(c => c.trim()).filter(Boolean);
 
-            suppliers.push(supplier);
+            if (suppliersMap.has(normalizedName)) {
+                // Merge with existing entry in this batch
+                const existing = suppliersMap.get(normalizedName);
+
+                // Merge unique categories
+                const categorySet = new Set([...existing.categories, ...newCategories]);
+                existing.categories = Array.from(categorySet);
+
+                // Update other fields if they were empty in existing but present in new
+                if (!existing.location && location.trim()) existing.location = location.trim();
+                if (!existing.contact && contact.trim()) existing.contact = contact.trim();
+                if (!existing.whatsapp && whatsapp.trim()) existing.whatsapp = whatsapp.trim();
+            } else {
+                // Add new entry
+                suppliersMap.set(normalizedName, {
+                    id: generateId(),
+                    name: trimmedName,
+                    categories: newCategories,
+                    location: location.trim(),
+                    contact: contact.trim(),
+                    whatsapp: whatsapp.trim()
+                });
+            }
         } catch (error) {
             errors.push(`Line ${lineNum}: ${error.message}`);
         }
     });
 
+    const suppliers = Array.from(suppliersMap.values());
     return { suppliers, errors };
 };
 

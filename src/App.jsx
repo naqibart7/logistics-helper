@@ -483,15 +483,36 @@ const LogisticsSystem = () => {
         setSuppliers(prev => prev.filter(s => s.id !== id));
     };
 
+    const mergeSuppliers = (existing, incoming) => {
+        const merged = [...existing];
+        incoming.forEach(newSup => {
+            const existingIndex = merged.findIndex(s => s.name.toLowerCase() === newSup.name.toLowerCase());
+            if (existingIndex !== -1) {
+                const existingSup = merged[existingIndex];
+                const categorySet = new Set([...existingSup.categories, ...newSup.categories]);
+                merged[existingIndex] = {
+                    ...existingSup,
+                    categories: Array.from(categorySet).sort(),
+                    location: existingSup.location || newSup.location,
+                    contact: existingSup.contact || newSup.contact,
+                    whatsapp: existingSup.whatsapp || newSup.whatsapp
+                };
+            } else {
+                merged.push(newSup);
+            }
+        });
+        return merged;
+    };
+
     const handleSupplierImport = async (file) => {
         try {
             const result = await importSuppliersFromFile(file);
             setImportResult(result);
 
             if (result.errors.length === 0) {
-                // No errors, add all suppliers
-                setSuppliers(prev => [...prev, ...result.suppliers]);
-                alert(`Successfully imported ${result.suppliers.length} supplier(s)`);
+                // No errors, merge all suppliers
+                setSuppliers(prev => mergeSuppliers(prev, result.suppliers));
+                alert(`Successfully processed ${result.suppliers.length} supplier(s)`);
                 setShowSupplierImport(false);
                 setImportResult(null);
             }
@@ -502,8 +523,8 @@ const LogisticsSystem = () => {
 
     const confirmImportWithErrors = () => {
         if (importResult && importResult.suppliers.length > 0) {
-            setSuppliers([...suppliers, ...importResult.suppliers]);
-            alert(`Imported ${importResult.suppliers.length} supplier(s) with ${importResult.errors.length} error(s) skipped`);
+            setSuppliers(prev => mergeSuppliers(prev, importResult.suppliers));
+            alert(`Processed ${importResult.suppliers.length} supplier(s) with ${importResult.errors.length} error(s) skipped`);
             setShowSupplierImport(false);
             setImportResult(null);
         }
