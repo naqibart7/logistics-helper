@@ -5,6 +5,7 @@ import { generateId, searchFilter } from './utils/helpers';
 import { exportBOMToCSV } from './utils/csvExport';
 import { exportSuppliersToCSV, importSuppliersFromFile, downloadSupplierTemplate } from './utils/csvSupplier';
 import { exportChecklistToPDF } from './utils/pdfChecklist';
+import { exportBOMToPDF } from './utils/pdfExport';
 import { parseExcelCostFile } from './utils/excelParser';
 import { parseDocument, formatCurrency } from './utils/pdfParser';
 import { smartParse } from './utils/advancedParser';
@@ -956,17 +957,25 @@ const LogisticsSystem = () => {
                                             {selectedProject.status === 'Delivered' ? (
                                                 <button
                                                     onClick={() => exportChecklistToPDF(selectedProject, selectedProject.materials)}
-                                                    className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm"
+                                                    className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95"
                                                 >
                                                     <FileText size={18} /> Download PDF Checklist
                                                 </button>
                                             ) : (
-                                                <button
-                                                    onClick={() => exportBOMToCSV(selectedProject)}
-                                                    className="bg-purple-600 text-white px-5 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm"
-                                                >
-                                                    <FileText size={18} /> Export CSV
-                                                </button>
+                                                <div className="flex gap-2">
+                                                    <button
+                                                        onClick={() => exportBOMToCSV(selectedProject)}
+                                                        className="bg-purple-600 text-white px-5 py-2 rounded-lg hover:bg-purple-700 flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95"
+                                                    >
+                                                        <FileSpreadsheet size={18} /> Export CSV
+                                                    </button>
+                                                    <button
+                                                        onClick={() => exportBOMToPDF(selectedProject)}
+                                                        className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95"
+                                                    >
+                                                        <FileText size={18} /> Download PDF
+                                                    </button>
+                                                </div>
                                             )}
                                         </div>
 
