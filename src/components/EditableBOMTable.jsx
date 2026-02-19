@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Trash2, Edit2, Save, X, Plus } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Trash2, Edit2, Save, X, Plus, ChevronDown, ChevronRight } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 import { generateId } from '../utils/helpers';
 
@@ -7,6 +7,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [addingNew, setAddingNew] = useState(false);
+    const [collapsedCategories, setCollapsedCategories] = useState({});
     const [newItemForm, setNewItemForm] = useState({
         category: defaultCategory,
         item: '',
@@ -45,7 +46,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
 
         onAdd(newMaterial);
         setNewItemForm({
-            category: defaultCategory,
+            category: newItemForm.category || defaultCategory,
             item: '',
             quantity: '',
             unit: '',
@@ -53,6 +54,24 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
             pricePerUnit: ''
         });
         setAddingNew(false);
+    };
+
+    const groupedMaterials = useMemo(() => {
+        return materials.reduce((groups, material) => {
+            const cat = material.category || 'Other';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(material);
+            return groups;
+        }, {});
+    }, [materials]);
+
+    const categories = useMemo(() => Object.keys(groupedMaterials).sort(), [groupedMaterials]);
+
+    const toggleCategory = (cat) => {
+        setCollapsedCategories(prev => ({
+            ...prev,
+            [cat]: !prev[cat]
+        }));
     };
 
     if (materials.length === 0 && !addingNew) {
@@ -92,14 +111,14 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                 <table className="w-full text-sm">
                     <thead className="bg-gray-100">
                         <tr>
-                            <th className="px-3 py-2 text-left font-medium">Category</th>
+                            <th className="px-3 py-2 text-left font-medium w-32">Category</th>
                             <th className="px-3 py-2 text-left font-medium">Item</th>
-                            <th className="px-3 py-2 text-right font-medium">Qty</th>
-                            <th className="px-3 py-2 text-left font-medium">Unit</th>
+                            <th className="px-3 py-2 text-right font-medium w-20">Qty</th>
+                            <th className="px-3 py-2 text-left font-medium w-20">Unit</th>
                             {showPrices && (
                                 <>
-                                    <th className="px-3 py-2 text-right font-medium">Price/Unit</th>
-                                    <th className="px-3 py-2 text-right font-medium">Total</th>
+                                    <th className="px-3 py-2 text-right font-medium w-24">Price/Unit</th>
+                                    <th className="px-3 py-2 text-right font-medium w-24">Total</th>
                                 </>
                             )}
                             <th className="px-3 py-2 w-20">Actions</th>
@@ -113,7 +132,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                         value={newItemForm.category}
                                         onChange={e => setNewItemForm({ ...newItemForm, category: e.target.value })}
                                         placeholder="Category"
-                                        className="w-full border rounded px-2 py-1 text-sm"
+                                        className="w-full border rounded px-2 py-1 text-sm text-blue-800 font-medium"
                                     />
                                 </td>
                                 <td className="px-3 py-2">
@@ -122,6 +141,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                         onChange={e => setNewItemForm({ ...newItemForm, item: e.target.value })}
                                         placeholder="Item name *"
                                         className="w-full border rounded px-2 py-1 text-sm"
+                                        autoFocus
                                     />
                                 </td>
                                 <td className="px-3 py-2">
@@ -134,15 +154,15 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                             const calculatedPrice = qty && pricePerUnit ? (parseFloat(qty) * pricePerUnit).toFixed(2) : '';
                                             setNewItemForm({ ...newItemForm, quantity: qty, price: calculatedPrice });
                                         }}
-                                        placeholder="Qty"
-                                        className="w-full border rounded px-2 py-1 text-sm text-right"
+                                        placeholder="0"
+                                        className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
                                     />
                                 </td>
                                 <td className="px-3 py-2">
                                     <input
                                         value={newItemForm.unit}
                                         onChange={e => setNewItemForm({ ...newItemForm, unit: e.target.value })}
-                                        placeholder="Unit"
+                                        placeholder="pcs"
                                         className="w-full border rounded px-2 py-1 text-sm"
                                     />
                                 </td>
@@ -160,7 +180,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                     setNewItemForm({ ...newItemForm, pricePerUnit, price: calculatedPrice });
                                                 }}
                                                 placeholder="0.00"
-                                                className="w-full border rounded px-2 py-1 text-sm text-right"
+                                                className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
                                             />
                                         </td>
                                         <td className="px-3 py-2">
@@ -170,17 +190,16 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                 value={newItemForm.price}
                                                 onChange={e => setNewItemForm({ ...newItemForm, price: e.target.value })}
                                                 placeholder="0.00"
-                                                className="w-full border rounded px-2 py-1 text-sm text-right bg-gray-50"
-                                                title="Auto-calculated from Qty × Price/Unit"
+                                                className="w-full border rounded px-2 py-1 text-sm text-right bg-white font-mono"
                                             />
                                         </td>
                                     </>
                                 )}
                                 <td className="px-3 py-2">
-                                    <div className="flex gap-1">
+                                    <div className="flex gap-1 justify-center">
                                         <button
                                             onClick={handleAddNew}
-                                            className="text-green-600 hover:text-green-800 p-1"
+                                            className="bg-green-600 text-white p-1 rounded hover:bg-green-700 transition-colors"
                                             title="Save"
                                         >
                                             <Save size={16} />
@@ -197,7 +216,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                     pricePerUnit: ''
                                                 });
                                             }}
-                                            className="text-gray-600 hover:text-gray-800 p-1"
+                                            className="bg-gray-200 text-gray-600 p-1 rounded hover:bg-gray-300 transition-colors"
                                             title="Cancel"
                                         >
                                             <X size={16} />
@@ -206,143 +225,161 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                 </td>
                             </tr>
                         )}
-                        {materials.map((m, i) => (
-                            <tr key={m.id || i} className="border-t hover:bg-gray-50">
-                                {editingId === m.id ? (
-                                    // Edit mode
-                                    <>
-                                        <td className="px-3 py-2">
-                                            <input
-                                                value={editForm.category}
-                                                onChange={e => setEditForm({ ...editForm, category: e.target.value })}
-                                                className="w-full border rounded px-2 py-1 text-sm"
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input
-                                                value={editForm.item}
-                                                onChange={e => setEditForm({ ...editForm, item: e.target.value })}
-                                                className="w-full border rounded px-2 py-1 text-sm"
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input
-                                                type="number"
-                                                value={editForm.quantity}
-                                                onChange={e => {
-                                                    const qty = e.target.value;
-                                                    const pricePerUnit = parseFloat(editForm.pricePerUnit) || 0;
-                                                    const calculatedPrice = qty && pricePerUnit ? parseFloat(qty) * pricePerUnit : null;
-                                                    setEditForm({ ...editForm, quantity: qty, price: calculatedPrice });
-                                                }}
-                                                className="w-full border rounded px-2 py-1 text-sm text-right"
-                                            />
-                                        </td>
-                                        <td className="px-3 py-2">
-                                            <input
-                                                value={editForm.unit}
-                                                onChange={e => setEditForm({ ...editForm, unit: e.target.value })}
-                                                className="w-full border rounded px-2 py-1 text-sm"
-                                            />
-                                        </td>
-                                        {showPrices && (
+
+                        {categories.map(category => (
+                            <React.Fragment key={category}>
+                                {/* Category Header */}
+                                <tr className="bg-gray-50/80 border-t">
+                                    <td colSpan={showPrices ? 7 : 5} className="px-3 py-1.5 cursor-pointer hover:bg-gray-100" onClick={() => toggleCategory(category)}>
+                                        <div className="flex items-center gap-2">
+                                            {collapsedCategories[category] ? <ChevronRight size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+                                            <span className="font-bold text-gray-700 uppercase tracking-tight text-[11px]">{category}</span>
+                                            <span className="text-[10px] text-gray-400 px-1.5 py-0.5 bg-gray-200/50 rounded-full font-medium">
+                                                {groupedMaterials[category].length} items
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+
+                                {/* Material Rows for Category */}
+                                {!collapsedCategories[category] && groupedMaterials[category].map((m, i) => (
+                                    <tr key={m.id || i} className="border-t hover:bg-blue-50/30 group">
+                                        {editingId === m.id ? (
+                                            // Edit mode
                                             <>
                                                 <td className="px-3 py-2">
                                                     <input
+                                                        value={editForm.category}
+                                                        onChange={e => setEditForm({ ...editForm, category: e.target.value })}
+                                                        className="w-full border rounded px-2 py-1 text-sm font-medium"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <input
+                                                        value={editForm.item}
+                                                        onChange={e => setEditForm({ ...editForm, item: e.target.value })}
+                                                        className="w-full border rounded px-2 py-1 text-sm"
+                                                    />
+                                                </td>
+                                                <td className="px-3 py-2">
+                                                    <input
                                                         type="number"
-                                                        step="0.01"
-                                                        value={editForm.pricePerUnit || ''}
+                                                        value={editForm.quantity}
                                                         onChange={e => {
-                                                            const pricePerUnit = parseFloat(e.target.value) || null;
-                                                            const qty = parseFloat(editForm.quantity) || 0;
-                                                            const calculatedPrice = pricePerUnit && qty ? pricePerUnit * qty : null;
-                                                            setEditForm({ ...editForm, pricePerUnit, price: calculatedPrice });
+                                                            const qty = e.target.value;
+                                                            const pricePerUnit = parseFloat(editForm.pricePerUnit) || 0;
+                                                            const calculatedPrice = qty && pricePerUnit ? parseFloat(qty) * pricePerUnit : null;
+                                                            setEditForm({ ...editForm, quantity: qty, price: calculatedPrice });
                                                         }}
-                                                        className="w-full border rounded px-2 py-1 text-sm text-right"
+                                                        className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
                                                     />
                                                 </td>
                                                 <td className="px-3 py-2">
                                                     <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        value={editForm.price || ''}
-                                                        onChange={e => setEditForm({ ...editForm, price: parseFloat(e.target.value) || null })}
-                                                        className="w-full border rounded px-2 py-1 text-sm text-right bg-gray-50"
-                                                        title="Auto-calculated from Qty × Price/Unit"
+                                                        value={editForm.unit}
+                                                        onChange={e => setEditForm({ ...editForm, unit: e.target.value })}
+                                                        className="w-full border rounded px-2 py-1 text-sm"
                                                     />
                                                 </td>
+                                                {showPrices && (
+                                                    <>
+                                                        <td className="px-3 py-2">
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={editForm.pricePerUnit || ''}
+                                                                onChange={e => {
+                                                                    const pricePerUnit = parseFloat(e.target.value) || null;
+                                                                    const qty = parseFloat(editForm.quantity) || 0;
+                                                                    const calculatedPrice = pricePerUnit && qty ? pricePerUnit * qty : null;
+                                                                    setEditForm({ ...editForm, pricePerUnit, price: calculatedPrice });
+                                                                }}
+                                                                className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
+                                                            />
+                                                        </td>
+                                                        <td className="px-3 py-2">
+                                                            <input
+                                                                type="number"
+                                                                step="0.01"
+                                                                value={editForm.price || ''}
+                                                                onChange={e => setEditForm({ ...editForm, price: parseFloat(e.target.value) || null })}
+                                                                className="w-full border rounded px-2 py-1 text-sm text-right bg-white font-mono"
+                                                            />
+                                                        </td>
+                                                    </>
+                                                )}
+                                                <td className="px-3 py-2">
+                                                    <div className="flex gap-1 justify-center">
+                                                        <button
+                                                            onClick={saveEdit}
+                                                            className="text-green-600 hover:text-green-800 p-1"
+                                                            title="Save"
+                                                        >
+                                                            <Save size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={cancelEdit}
+                                                            className="text-gray-400 hover:text-gray-600 p-1"
+                                                            title="Cancel"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    </div>
+                                                </td>
                                             </>
-                                        )}
-                                        <td className="px-3 py-2">
-                                            <div className="flex gap-1">
-                                                <button
-                                                    onClick={saveEdit}
-                                                    className="text-green-600 hover:text-green-800 p-1"
-                                                    title="Save"
-                                                >
-                                                    <Save size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={cancelEdit}
-                                                    className="text-gray-600 hover:text-gray-800 p-1"
-                                                    title="Cancel"
-                                                >
-                                                    <X size={16} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </>
-                                ) : (
-                                    // View mode
-                                    <>
-                                        <td className="px-3 py-2 text-xs">{m.category}</td>
-                                        <td className="px-3 py-2">{m.item}</td>
-                                        <td className="px-3 py-2 text-right font-mono">{m.quantity}</td>
-                                        <td className="px-3 py-2">{m.unit}</td>
-                                        {showPrices && (
+                                        ) : (
+                                            // View mode
                                             <>
-                                                <td className="px-3 py-2 text-right font-mono text-gray-600 text-xs">
-                                                    {m.pricePerUnit ? formatCurrency(m.pricePerUnit) : '—'}
-                                                </td>
-                                                <td className="px-3 py-2 text-right font-mono font-medium">
-                                                    {m.price ? formatCurrency(m.price) : '—'}
+                                                <td className="px-3 py-2 text-[10px] text-gray-400 font-medium uppercase">{m.category}</td>
+                                                <td className="px-3 py-2 font-medium text-gray-700">{m.item}</td>
+                                                <td className="px-3 py-2 text-right font-mono text-gray-900">{m.quantity}</td>
+                                                <td className="px-3 py-2 text-gray-500">{m.unit}</td>
+                                                {showPrices && (
+                                                    <>
+                                                        <td className="px-3 py-2 text-right font-mono text-gray-600 text-[11px]">
+                                                            {m.pricePerUnit ? formatCurrency(m.pricePerUnit) : '—'}
+                                                        </td>
+                                                        <td className="px-3 py-2 text-right font-mono font-semibold text-gray-900">
+                                                            {m.price ? formatCurrency(m.price) : '—'}
+                                                        </td>
+                                                    </>
+                                                )}
+                                                <td className="px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <div className="flex gap-1 justify-center">
+                                                        <button
+                                                            onClick={() => startEdit(m)}
+                                                            className="text-blue-600 hover:bg-blue-50 p-1 rounded transition-colors"
+                                                            title="Edit"
+                                                        >
+                                                            <Edit2 size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                if (window.confirm('Delete this item?')) {
+                                                                    onRemove(m.id);
+                                                                }
+                                                            }}
+                                                            className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                                                            title="Delete"
+                                                        >
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </>
                                         )}
-                                        <td className="px-3 py-2">
-                                            <div className="flex gap-1">
-                                                <button
-                                                    onClick={() => startEdit(m)}
-                                                    className="text-blue-600 hover:text-blue-800 p-1"
-                                                    title="Edit"
-                                                >
-                                                    <Edit2 size={16} />
-                                                </button>
-                                                <button
-                                                    onClick={() => {
-                                                        if (window.confirm('Delete this item?')) {
-                                                            onRemove(m.id);
-                                                        }
-                                                    }}
-                                                    className="text-red-600 hover:text-red-800 p-1"
-                                                    title="Delete"
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </>
-                                )}
-                            </tr>
+                                    </tr>
+                                ))}
+                            </React.Fragment>
                         ))}
                     </tbody>
                     {showPrices && totalPrice > 0 && (
-                        <tfoot className="bg-gray-50 border-t-2">
+                        <tfoot className="bg-gray-100 border-t-2">
                             <tr>
-                                <td colSpan={5} className="px-3 py-2 text-right font-semibold">
-                                    Total ({itemsWithPrice}/{materials.length} items with prices):
+                                <td colSpan={showPrices ? 5 : 3} className="px-3 py-3 text-right font-bold text-gray-700">
+                                    Grand Total ({itemsWithPrice}/{materials.length} items with prices):
                                 </td>
-                                <td className="px-3 py-2 text-right font-mono font-bold text-lg">
+                                <td className="px-3 py-3 text-right font-mono font-black text-blue-600 text-lg">
                                     {formatCurrency(totalPrice)}
                                 </td>
                                 <td></td>
@@ -353,8 +390,9 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
             </div>
 
             {showPrices && itemsWithPrice < materials.length && (
-                <div className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                    ⚠️ {materials.length - itemsWithPrice} item(s) without price information
+                <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 flex items-center gap-2">
+                    <span className="flex-shrink-0 w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                    <span>{materials.length - itemsWithPrice} item(s) are missing price information. Update them to see a complete total.</span>
                 </div>
             )}
         </div>
