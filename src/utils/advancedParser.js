@@ -1,0 +1,554 @@
+// ============================================================================
+// ADVANCED PARSER FOR CONSTRUCTION MATERIAL COST & JOB COST DOCUMENTS
+// ============================================================================
+// Supports: Material Cost format (multiple variations) & Job Cost format
+// Auto-detects format and column structure
+// ============================================================================
+
+/**
+ * Generate unique ID for materials
+ */
+const generateId = () => {
+    return Date.now() + Math.random().toString(36).substr(2, 9);
+};
+
+/**
+ * Clean currency string to number
+ */
+const cleanCurrency = (str) => {
+    if (!str) return 0;
+    return parseFloat(str.replace(/[^\d.-]/g, '')) || 0;
+};
+
+// ============================================================================
+// MATERIAL COST PARSER (ENHANCED - HANDLES MULTIPLE COLUMN VARIATIONS)
+// ============================================================================
+/**
+ * Parse Material Cost format with flexible column detection
+ * Handles variations:
+ * - Format A: > ITEM QTY UNIT_PRICE RM TOTAL
+ * - Format B: > ITEM UNIT/SQF QTY UNIT_PRICE RM TOTAL
+ * - Format C: > ITEM - QTY UNIT - RM TOTAL
+ */
+const parseMaterialCost = (text) => {
+    const lines = text.split('\n');
+    const materials = [];
+    let currentCategory = 'MATERIALS';
+    let currentSectionTotal = null;
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        const lower = line.toLowerCase();
+
+        // Skip empty lines
+        if (!line) continue;
+
+        // Detect category/section headers (NOT starting with '>')
+        // Look for all-caps sections or specific keywords
+        if (
+            !line.startsWith('>') &&
+            (
+                line.match(/^[A-Z\s/,()]+$/) || // All caps line
+                lower.includes('pvc foam board') ||
+                lower.includes('lighting') ||
+                lower.includes('acrylic') ||
+                lower.includes('paint') ||
+                lower.includes('plaster') ||
+                lower.includes('skirting') ||
+                lower.includes('wct') ||
+                lower.includes('cornice') ||
+                lower.includes('others') ||
+                lower.includes('new wall') ||
+                lower.includes('gypsum')
+            ) &&
+            !lower.includes('total') &&
+            !lower.includes('material cost') &&
+            !lower.includes('service') &&
+            !lower.includes('installation')
+        ) {
+            currentCategory = line;
+            continue;
+        }
+
+        // Detect section totals (for validation/debugging)
+        if (line.match(/^RM\s*[\d,]+\.?\d*/)) {
+            currentSectionTotal = line;
+            continue;
+        }
+
+        // Parse material lines starting with '>'
+        if (line.startsWith('>')) {
+            const cleaned = line.substring(1).trim();
+
+            // Skip if this is a service/labor line (not material)
+            if (
+                lower.includes('sub paint') ||
+                lower.includes('installation') ||
+                lower.includes('transport') ||
+                lower.includes('wiring') ||
+                lower.includes('hacking') ||
+                lower.includes('contingency') ||
+                lower.includes('commission')
+            ) {
+                continue;
+            }
+
+            // Find the RM TOTAL at the end
+            const totalMatch = cleaned.match(/(RM\s*[\d,]+\.?\d*)$/i);
+
+            if (!totalMatch) continue;
+
+            const totalPart = totalMatch[0];
+            const total = parseFloat(totalPart.replace(/RM\s*/i, '').replace(/,/g, ''));
+
+            // Skip zero-value items
+            if (total <= 0) continue;
+
+            // Remove the RM TOTAL from the line
+            let remainder = cleaned.replace(totalMatch[0], '').trim();
+
+            // Extract numeric values (these could be UNIT/SQF, QTY, UNIT_PRICE)
+            const numbers = [];
+            const numberPattern = /\d+\.?\d*/g;
+            let match;
+
+            // Extract all numbers from the remainder
+            const numberMatches = remainder.match(numberPattern);
+
+            if (!numberMatches || numberMatches.length === 0) {
+                // No numbers found - might be a malformed line
+                continue;
+            }
+
+            // Strategy: The last 1-3 numbers before RM TOTAL are the quantity/price values
+            // Work backwards from the end
+            let parts = remainder.split(/\s+/).filter(Boolean);
+            let extractedNumbers = [];
+
+            // Extract last 1-3 numeric values
+            while (parts.length > 0 && extractedNumbers.length < 3) {
+                const lastPart = parts.pop();
+                if (lastPart.match(/^\d+\.?\d*$/)) {
+                    extractedNumbers.unshift(parseFloat(lastPart));
+                } else {
+                    // Put it back - this is part of the item name
+                    parts.push(lastPart);
+                    break;
+                }
+            }
+
+            // Reconstruct item name from remaining parts
+            let item = parts.join(' ').trim();
+
+            // Determine QTY and UNIT_PRICE based on how many numbers we found
+            let qty = 1;
+            let unitPrice = 0;
+
+            if (extractedNumbers.length === 3) {
+                // Format: ITEM UNIT/SQF QTY UNIT_PRICE RM TOTAL
+                // extractedNumbers = [UNIT/SQF, QTY, UNIT_PRICE]
+                qty = extractedNumbers[1];
+                unitPrice = extractedNumbers[2];
+            } else if (extractedNumbers.length === 2) {
+                // Format: ITEM QTY UNIT_PRICE RM TOTAL
+                // extractedNumbers = [QTY, UNIT_PRICE]
+                qty = extractedNumbers[0];
+                unitPrice = extractedNumbers[1];
+            } else if (extractedNumbers.length === 1) {
+                // Format: ITEM QTY RM TOTAL (calculate unit price)
+                qty = extractedNumbers[0];
+                unitPrice = qty > 0 ? total / qty : 0;
+            }
+
+            // Validate
+            if (!item || item.length < 2) continue;
+
+            materials.push({
+                id: generateId(),
+                category: currentCategory,
+                item: item,
+                quantity: qty,
+                unit: 'pcs',
+                unitPrice: unitPrice,
+                price: total,
+                total: total
+            });
+        }
+    }
+
+    return materials;
+};
+
+// ============================================================================
+// JOB COST PARSER (STRICT IMPLEMENTATION)
+// ============================================================================
+/**
+ * Parse Job Cost format with strict context management
+ */
+const parseJobCost = (text) => {
+    const lines = text
+        .split('\n')
+        .map(l => l.trim())
+        .filter(l => l.length > 12);
+
+    const materials = [];
+    let currentCategory = null;
+    let insideValidMaterialSection = false;
+    let insideValidSupportingSection = false;
+
+    for (const line of lines) {
+        const lower = line.toLowerCase();
+
+        // DETECT MATERIALS CONTEXT
+        if (
+            lower.includes('gypsum') ||
+            lower.includes('cement board') ||
+            lower.includes('plywood') ||
+            lower.includes('plaster') ||
+            lower.includes('pvc') ||
+            lower.includes('hpl') ||
+            lower.includes('laminate') ||
+            lower.includes('acrylic') ||
+            lower.includes('wpc') ||
+            lower.includes('fluted') ||
+            lower.includes('skirting') ||
+            lower.includes('glass') ||
+            lower.includes('sticker') ||
+            lower.includes('mirror') ||
+            lower.includes('blockboard') ||
+            lower.includes('furniture') ||
+            lower.includes('lighting') ||
+            lower.includes('lamp') ||
+            lower.includes('led') ||
+            lower.includes('downlight') ||
+            lower.includes('eyeball') ||
+            lower.includes('fan') ||
+            lower.includes('tiles') ||
+            lower.includes('flooring') ||
+            lower.includes('carpet') ||
+            lower.includes('underlay') ||
+            lower.includes('canvas') ||
+            lower.includes('scaffolding') ||
+            lower.includes('roro') ||
+            lower.includes('bin')
+        ) {
+            currentCategory = 'MATERIALS';
+            insideValidMaterialSection = true;
+            insideValidSupportingSection = false;
+        }
+
+        // DETECT SUPPORTING MATERIAL CONTEXT
+        if (
+            lower.includes('supporting material') ||
+            lower.includes('metal stud') ||
+            lower.includes('corner bead') ||
+            lower.includes('joint tape') ||
+            lower.includes('flaxi') ||
+            lower.includes('drywall screw') ||
+            lower.includes('x-bond') ||
+            lower.includes('super glue') ||
+            lower.includes('silicon') ||
+            lower.includes('masking') ||
+            lower.includes('wire') ||
+            lower.includes('cable') ||
+            lower.includes('suis') ||
+            lower.includes('socket') ||
+            lower.includes('switch') ||
+            lower.includes('bulb') ||
+            lower.includes('hinge') ||
+            lower.includes('door closer') ||
+            lower.includes('door stopper') ||
+            lower.includes('door knob') ||
+            lower.includes('lock') ||
+            lower.includes('screw') ||
+            lower.includes('nail') ||
+            lower.includes('l-profile') ||
+            lower.includes('besi') ||
+            lower.includes('kayu kocai') ||
+            lower.includes('thinner') ||
+            lower.includes('roller') ||
+            lower.includes('brush') ||
+            lower.includes('undercoat') ||
+            lower.includes('primer')
+        ) {
+            currentCategory = 'SUPPORTING MATERIAL';
+            insideValidSupportingSection = true;
+            insideValidMaterialSection = false;
+        }
+
+        // HARD STOPS
+        if (
+            lower.includes('labour work') ||
+            lower.includes('transport') ||
+            lower.includes('free gift') ||
+            lower.includes('pakej') ||
+            lower.includes('summary of tpc') ||
+            lower.includes('method c') ||
+            lower.includes('total (cogs)') ||
+            lower.includes('total installation') ||
+            lower.includes('total transport') ||
+            lower.includes('total sub paint') ||
+            lower.includes('commission') ||
+            lower.includes('contigency') ||
+            lower.includes('contingency') ||
+            lower.includes('opex') ||
+            lower.includes('cat dekat site') ||
+            lower.includes('jotun') ||
+            lower.includes('suzuka') ||
+            line.includes('--- PAGE BREAK ---')
+        ) {
+            insideValidMaterialSection = false;
+            insideValidSupportingSection = false;
+            continue;
+        }
+
+        // JUNK FILTER
+        if (
+            line.includes('SQFT /') ||
+            line.includes('QTY (PCS)') ||
+            line.includes('QTY LEBIHKAN') ||
+            line.includes('KALAU') ||
+            line.includes('TERMASUK') ||
+            line.match(/^\d+\s*$/) ||
+            line.endsWith('RM 0.00') ||
+            line.includes('RM       0.00') ||
+            line.includes('RM 0.00') ||
+            lower.includes('spec') ||
+            lower.includes('insert') ||
+            lower.includes('masukkan') ||
+            line.includes('→')
+        ) continue;
+
+        // PARSE ITEM
+        let cleaned = line.replace(/\s{2,}/g, '  ').trim();
+        const totalMatch = cleaned.match(/(RM\s*[\d,]+\.?\d*)$/i);
+
+        if (!totalMatch) continue;
+        if (!insideValidMaterialSection && !insideValidSupportingSection) continue;
+
+        const totalPart = totalMatch[0];
+        if (totalPart.includes('0.00')) continue;
+
+        const total = parseFloat(totalPart.replace(/RM\s*/i, '').replace(/,/g, ''));
+        if (total <= 0) continue;
+
+        cleaned = cleaned.replace(totalMatch[0], '').trim();
+
+        let parts = cleaned.split(/\s{2,}/).filter(Boolean);
+        if (parts.length < 2) {
+            parts = cleaned.split(/\s+/).filter(Boolean);
+        }
+        if (parts.length < 2) continue;
+
+        let price = null;
+        let qty = null;
+
+        let candidate = parts.pop();
+        if (candidate.match(/^\d+\.?\d{0,2}$/)) {
+            price = parseFloat(candidate);
+        } else {
+            parts.push(candidate);
+        }
+
+        if (parts.length > 0) {
+            candidate = parts.pop();
+            if (candidate.match(/^\d+\.?\d*$/)) {
+                qty = parseFloat(candidate);
+            } else {
+                parts.push(candidate);
+            }
+        }
+
+        let item = parts.join(' ').trim();
+        item = item.replace(/^\d{1,3}\s+/, '');
+        item = item.replace(/^(NEW STRUCTURE|CEILING|WALL PANEL|WALL FINISHES|GLASS FINISHES|FURNITURE|LIGHTING|TILES|FLOORING|PAINT|SITE PREPARATION)\s*/i, '');
+
+        if (item.length < 2 || !qty || item.includes('TOTAL')) continue;
+
+        materials.push({
+            id: generateId(),
+            category: currentCategory,
+            item,
+            quantity: qty,
+            unit: 'pcs',
+            unitPrice: price || (qty ? total / qty : 0),
+            price: total,
+            total
+        });
+    }
+
+    return materials;
+};
+
+// ============================================================================
+// METADATA EXTRACTOR
+// ============================================================================
+/**
+ * Extract project metadata from document
+ */
+const extractMetadata = (text) => {
+    const metadata = {
+        projectName: '',
+        client: '',
+        projectNumber: '',
+        quotationNumber: '',
+        date: '',
+        totalProject: ''
+    };
+
+    const lines = text.split('\n');
+
+    lines.forEach(line => {
+        // Project Name
+        if (line.includes('PROJECT NAME')) {
+            const match = line.match(/:\s*(.+?)(?:CLIENT|INDOOR|OUTDOOR|\(|$)/i);
+            if (match) metadata.projectName = match[1].trim();
+        }
+
+        // Client Name
+        if (line.includes('CLIENT NAME')) {
+            const match = line.match(/:\s*(.+?)(?:\d{10,}|TOTAL|NPM|GPM|$)/i);
+            if (match) metadata.client = match[1].trim();
+        }
+
+        // Project Number
+        if (line.match(/PROJECT\s*(?:NO|#|NUMBER)/i)) {
+            const match = line.match(/(?:NO|#|NUMBER)[:\s]*([A-Z0-9-/]+)/i);
+            if (match) metadata.projectNumber = match[1];
+        }
+
+        // Quotation Number
+        if (line.match(/QUOTATION\s*[:#NO]/i)) {
+            const match = line.match(/QUOTATION\s*[:#NO]*\s*[:]*\s*([A-Z0-9-]+)/i);
+            if (match) metadata.quotationNumber = match[1];
+        }
+
+        // Date (multiple formats)
+        if (line.includes('DATE') || line.includes('QOUTATION DATE') || line.includes('QUOTATION DATE')) {
+            const dateMatch = line.match(/(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/);
+            if (dateMatch) {
+                metadata.date = dateMatch[1];
+            } else {
+                const parts = line.split(':');
+                if (parts.length > 1) metadata.date = parts[1].trim();
+            }
+        }
+
+        // Total Project
+        if (line.includes('TOTAL PROJECT')) {
+            const match = line.match(/RM\s*([\d,]+\.?\d*)/);
+            if (match) metadata.totalProject = match[1].replace(/,/g, '');
+        }
+    });
+
+    return metadata;
+};
+
+// ============================================================================
+// AUTO FORMAT DETECTOR
+// ============================================================================
+/**
+ * Detect document format
+ */
+const detectFormat = (text) => {
+    const lowerText = text.toLowerCase();
+
+    // Material Cost format indicators
+    if (
+        lowerText.includes('material cost') &&
+        lowerText.includes('quotation') &&
+        !lowerText.includes('job cost')
+    ) {
+        return 'MATERIAL_COST';
+    }
+
+    // Job Cost format indicators
+    if (lowerText.includes('job cost') || lowerText.includes('batch')) {
+        return 'JOB_COST';
+    }
+
+    // Fallback: Check for '>' prefix (Material Cost indicator)
+    if (text.includes('\n>') || text.includes('> ')) {
+        return 'MATERIAL_COST';
+    }
+
+    // Default to Job Cost
+    return 'JOB_COST';
+};
+
+// ============================================================================
+// MAIN SMART PARSER
+// ============================================================================
+/**
+ * Smart parser with auto format detection
+ * @param {string} text - Raw text from PDF
+ * @returns {object} - Parsed result with format, metadata, and materials
+ */
+export const smartParse = (text) => {
+    if (!text || !text.trim()) {
+        return {
+            format: 'UNKNOWN',
+            metadata: {},
+            materials: [],
+            success: false,
+            errors: ['Empty text provided']
+        };
+    }
+
+    try {
+        // Detect format
+        const format = detectFormat(text);
+
+        // Extract metadata
+        const metadata = extractMetadata(text);
+
+        // Parse materials based on format
+        let materials = [];
+        if (format === 'MATERIAL_COST') {
+            materials = parseMaterialCost(text);
+        } else {
+            materials = parseJobCost(text);
+        }
+
+        // Calculate total if not found in metadata
+        if (!metadata.totalProject && materials.length > 0) {
+            const calculatedTotal = materials.reduce((sum, m) => sum + (m.total || 0), 0);
+            metadata.totalProject = calculatedTotal.toFixed(2);
+        }
+
+        // Add statistics
+        const totalQuantity = materials.reduce((sum, m) => sum + (m.quantity || 0), 0);
+        const totalPrice = materials.reduce((sum, m) => sum + (m.total || 0), 0);
+        const categories = [...new Set(materials.map(m => m.category))];
+
+        const stats = {
+            totalItems: materials.length,
+            totalQuantity: totalQuantity,
+            totalPrice: totalPrice,
+            categories: categories.length,
+            categoryList: categories
+        };
+
+        return {
+            format,
+            metadata: { ...metadata, ...stats },
+            materials,
+            success: materials.length > 0,
+            errors: materials.length === 0 ? ['No materials found in document'] : []
+        };
+    } catch (error) {
+        console.error('Parser error:', error);
+        return {
+            format: 'ERROR',
+            metadata: {},
+            materials: [],
+            success: false,
+            errors: [error.message]
+        };
+    }
+};
+
+// ============================================================================
+// EXPORT MAIN FUNCTION
+// ============================================================================
+export default smartParse;
