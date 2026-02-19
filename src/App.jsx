@@ -22,10 +22,24 @@ import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
 import Modal from './components/Modal';
 
+const generateSafeId = () => {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+};
+
 const LogisticsSystem = () => {
     const [activeTab, setActiveTab] = useState('projects');
     const [projects, setProjects, projectsError] = useLocalStorage(STORAGE_KEYS.PROJECTS, []);
     const [suppliers, setSuppliers, suppliersError] = useLocalStorage(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+
+    // Migration: Ensure all projects have IDs
+    React.useEffect(() => {
+        if (projects.length > 0) {
+            const hasMissingIds = projects.some(p => !p.id);
+            if (hasMissingIds) {
+                setProjects(prev => prev.map(p => p.id ? p : { ...p, id: generateSafeId() }));
+            }
+        }
+    }, [projects.length]); // Only run when count changes
 
     const [selectedProject, setSelectedProject] = useState(null);
     const [showNewProject, setShowNewProject] = useState(false);
@@ -226,18 +240,34 @@ const LogisticsSystem = () => {
             alert('Project name and at least one material required');
             return;
         }
-        const newProject = { ...projectForm, id: generateId(), createdAt: new Date().toISOString() };
+        const newProject = {
+            ...projectForm,
+            id: generateSafeId(),
+            createdAt: new Date().toISOString()
+        };
         setProjects(prev => [...prev, newProject]);
+
         setShowNewProject(false);
         setProjectForm({
             name: '', client: '', location: '', deliveryAddress: '',
             contactPerson: '', contactPhone: '', needByDate: '',
             quotationNumber: '', projectNumber: '', materials: [], status: 'Draft'
         });
-        setPdfText('');
-        setParseMessage('');
-        setImportMode('text');
         setPreviewData(null);
+        setParseMetadata(null);
+    };
+
+    const discardNewProject = () => {
+        if (window.confirm('Discard this draft project?')) {
+            setShowNewProject(false);
+            setProjectForm({
+                name: '', client: '', location: '', deliveryAddress: '',
+                contactPerson: '', contactPhone: '', needByDate: '',
+                quotationNumber: '', projectNumber: '', materials: [], status: 'Draft'
+            });
+            setPreviewData(null);
+            setParseMetadata(null);
+        }
     };
 
     const updateProjectStatus = (projectId, newStatus) => {
@@ -260,10 +290,18 @@ const LogisticsSystem = () => {
             return p;
         }));
         if (selectedProject?.id === projectId) {
+            const updatedMaterials = selectedProject.materials.map(m => m.id === materialId ? { ...m, ...updates } : m);
             setSelectedProject({
                 ...selectedProject,
-                materials: selectedProject.materials.map(m => m.id === materialId ? { ...m, ...updates } : m)
+                materials: updatedMaterials
             });
+
+            if (isEditingProject && editedProject?.id === projectId) {
+                setEditedProject({
+                    ...editedProject,
+                    materials: updatedMaterials
+                });
+            }
         }
     };
 
@@ -278,10 +316,18 @@ const LogisticsSystem = () => {
             return p;
         }));
         if (selectedProject?.id === projectId) {
+            const updatedMaterials = selectedProject.materials.filter(m => m.id !== materialId);
             setSelectedProject({
                 ...selectedProject,
-                materials: selectedProject.materials.filter(m => m.id !== materialId)
+                materials: updatedMaterials
             });
+
+            if (isEditingProject && editedProject?.id === projectId) {
+                setEditedProject({
+                    ...editedProject,
+                    materials: updatedMaterials
+                });
+            }
         }
     };
 
@@ -296,10 +342,18 @@ const LogisticsSystem = () => {
             return p;
         }));
         if (selectedProject?.id === projectId) {
+            const updatedMaterials = [...selectedProject.materials, material];
             setSelectedProject({
                 ...selectedProject,
-                materials: [...selectedProject.materials, material]
+                materials: updatedMaterials
             });
+
+            if (isEditingProject && editedProject?.id === projectId) {
+                setEditedProject({
+                    ...editedProject,
+                    materials: updatedMaterials
+                });
+            }
         }
     };
 
@@ -313,7 +367,8 @@ const LogisticsSystem = () => {
 
     const startEditingProject = () => {
         setIsEditingProject(true);
-        setEditedProject({ ...selectedProject });
+        // Create a deep copy to avoid shared references for materials
+        setEditedProject(JSON.parse(JSON.stringify(selectedProject)));
     };
 
     const cancelEditingProject = () => {
@@ -326,7 +381,13 @@ const LogisticsSystem = () => {
         setProjects(prev => prev.map(p =>
             p.id === editedProject.id ? editedProject : p
         ));
-        setSelectedProject(editedProject);
+        setSelectedProject(JSON.parse(JSON.stringify(editedProject)));
+        setIsEditingProject(false);
+        setEditedProject(null);
+    };
+
+    const closeProjectModal = () => {
+        setSelectedProject(null);
         setIsEditingProject(false);
         setEditedProject(null);
     };
@@ -518,11 +579,15 @@ const LogisticsSystem = () => {
                                     <ProjectCard
                                         key={project.id}
                                         project={project}
-                                        onView={() => setSelectedProject(project)}
+                                        onView={() => {
+                                            setSelectedProject(project);
+                                            setIsEditingProject(false);
+                                            setEditedProject(null);
+                                        }}
                                         onEdit={() => {
                                             setSelectedProject(project);
                                             setIsEditingProject(true);
-                                            setEditedProject({ ...project });
+                                            setEditedProject(JSON.parse(JSON.stringify(project)));
                                         }}
                                         onDelete={() => deleteProject(project.id)}
                                     />
@@ -725,18 +790,18 @@ const LogisticsSystem = () => {
                                             />
                                         </div>
 
-                                        <div className="flex justify-end gap-4 pt-4">
+                                        <div className="flex justify-end gap-3 pt-6 border-t mt-8">
                                             <button
-                                                onClick={() => setShowNewProject(false)}
-                                                className="px-6 py-2.5 border rounded-lg hover:bg-gray-50"
+                                                onClick={discardNewProject}
+                                                className="px-6 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 text-red-600 font-medium transition-colors"
                                             >
-                                                Cancel
+                                                Discard Draft
                                             </button>
                                             <button
                                                 onClick={saveProject}
-                                                className="bg-blue-700 text-white px-8 py-2.5 rounded-lg hover:bg-blue-800 flex items-center gap-2 shadow-sm"
+                                                className="bg-blue-600 text-white px-8 py-2.5 rounded-lg hover:bg-blue-700 font-medium flex items-center gap-2 shadow-sm"
                                             >
-                                                <Save size={18} /> Save Project
+                                                <Save size={18} /> Create Project
                                             </button>
                                         </div>
                                     </>
@@ -746,7 +811,7 @@ const LogisticsSystem = () => {
 
                         <Modal
                             isOpen={!!selectedProject}
-                            onClose={() => setSelectedProject(null)}
+                            onClose={closeProjectModal}
                             title={selectedProject?.name || ''}
                             maxWidth="max-w-5xl"
                         >
