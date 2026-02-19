@@ -223,7 +223,7 @@ const LogisticsSystem = () => {
         if (!materialForm.item.trim()) return;
         setProjectForm(prev => ({
             ...prev,
-            materials: [...prev.materials, { ...materialForm, id: generateId() }]
+            materials: [...prev.materials, { ...materialForm, id: generateSafeId() }]
         }));
         setMaterialForm({ category: '', item: '', quantity: '', unit: '' });
     };
@@ -276,6 +276,10 @@ const LogisticsSystem = () => {
         ));
         if (selectedProject?.id === projectId) {
             setSelectedProject({ ...selectedProject, status: newStatus });
+
+            if (isEditingProject && editedProject?.id === projectId) {
+                setEditedProject({ ...editedProject, status: newStatus });
+            }
         }
     };
 
@@ -361,7 +365,7 @@ const LogisticsSystem = () => {
         if (!window.confirm('Are you sure you want to delete this project? This action cannot be undone.')) return;
         setProjects(prev => prev.filter(p => p.id !== id));
         if (selectedProject?.id === id) {
-            setSelectedProject(null);
+            closeProjectModal();
         }
     };
 
