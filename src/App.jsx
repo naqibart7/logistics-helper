@@ -956,12 +956,20 @@ const LogisticsSystem = () => {
                                                 {selectedProject.projectNumber && <span className="font-semibold text-blue-700 mr-2">[{selectedProject.projectNumber}]</span>}
                                                 {selectedProject.client || '—'} • {selectedProject.location || '—'}
                                             </p>
-                                            <button
-                                                onClick={startEditingProject}
-                                                className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-sm font-medium"
-                                            >
-                                                <Edit2 size={16} /> Edit Details
-                                            </button>
+                                            <div className="flex gap-4">
+                                                <button
+                                                    onClick={startEditingProject}
+                                                    className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-sm font-medium"
+                                                >
+                                                    <Edit2 size={16} /> Edit Details
+                                                </button>
+                                                <button
+                                                    onClick={() => deleteProject(selectedProject.id)}
+                                                    className="text-red-600 hover:text-red-700 flex items-center gap-1 text-sm font-medium"
+                                                >
+                                                    <Trash2 size={16} /> Delete Project
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
 

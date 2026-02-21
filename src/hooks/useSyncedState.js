@@ -53,23 +53,24 @@ export const useSyncedState = (key, defaultValue) => {
                 .maybeSingle();
 
             if (data?.value) {
+                // Cloud has data - overwrite local
                 setValue(data.value);
                 localStorage.setItem(key, JSON.stringify(data.value));
-            } else {
-                // If it's the first time for this ID, push local data up
+            } else if (!error) {
+                // Cloud is empty for this identifier - push what we have locally
                 await supabase
                     .from('user_data')
                     .upsert({
                         identifier,
                         key,
-                        value,
+                        value: value, // Use latest local value for migration
                         user_id: user?.id || null
-                    });
+                    }, { onConflict: 'identifier,key' });
             }
         };
 
         fetchData();
-    }, [user, key, identifier, value]);
+    }, [user, key, identifier]); // REMOVED 'value' to prevent revert-loops
 
     // 3. Save Logic
     const setSyncedValue = async (newValueOrFn) => {
@@ -87,7 +88,7 @@ export const useSyncedState = (key, defaultValue) => {
                         key,
                         value: newValue,
                         user_id: user?.id || null
-                    });
+                    }, { onConflict: 'identifier,key' });
             } catch (err) {
                 console.error('Cloud Sync Error:', err);
             }
