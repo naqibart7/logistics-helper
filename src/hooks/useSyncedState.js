@@ -21,6 +21,9 @@ export const useSyncedState = (key, defaultValue) => {
     const [user, setUser] = useState(null);
     const deviceId = getDeviceId();
 
+    // The primary identifier for this user/device pairing
+    const identifier = user ? `user:${user.id}` : `device:${deviceId}`;
+
     // 1. Listen for Auth Changes
     useEffect(() => {
         if (!supabase) return;
@@ -36,43 +39,39 @@ export const useSyncedState = (key, defaultValue) => {
         return () => subscription.unsubscribe();
     }, []);
 
-    // 2. Initial Data Pull (Cloud -> Local)
+    // 2. Initial Data Pull & Identity Migration
     useEffect(() => {
         if (!supabase) return;
 
         const fetchData = async () => {
-            // Priority: User ID if logged in, otherwise Device ID
-            const identifierText = user ? 'user_id' : 'device_id';
-            const identifierValue = user ? user.id : deviceId;
-
+            // Try to find existing data for the current identifier
             const { data, error } = await supabase
                 .from('user_data')
                 .select('value')
                 .eq('key', key)
-                .eq(identifierText, identifierValue)
+                .eq('identifier', identifier)
                 .maybeSingle();
 
             if (data?.value) {
-                // Cloud has data - update local
                 setValue(data.value);
                 localStorage.setItem(key, JSON.stringify(data.value));
-            } else if (!data && !error) {
-                // Cloud is empty - push local data up (Migration/First Time)
+            } else {
+                // If it's the first time for this ID, push local data up
                 await supabase
                     .from('user_data')
                     .upsert({
+                        identifier,
                         key,
                         value,
-                        user_id: user?.id || null,
-                        device_id: user ? null : deviceId
+                        user_id: user?.id || null
                     });
             }
         };
 
         fetchData();
-    }, [user, key]); // Re-fetch/re-sync when login status changes
+    }, [user, key, identifier, value]);
 
-    // 3. Save Logic (Local -> Cloud)
+    // 3. Save Logic
     const setSyncedValue = async (newValueOrFn) => {
         const newValue = typeof newValueOrFn === 'function' ? newValueOrFn(value) : newValueOrFn;
 
@@ -84,11 +83,11 @@ export const useSyncedState = (key, defaultValue) => {
                 await supabase
                     .from('user_data')
                     .upsert({
+                        identifier,
                         key,
                         value: newValue,
-                        user_id: user?.id || null,
-                        device_id: user ? null : deviceId
-                    }, { onConflict: 'user_id,key' }); // Ensure unique constraint handling
+                        user_id: user?.id || null
+                    });
             } catch (err) {
                 console.error('Cloud Sync Error:', err);
             }
