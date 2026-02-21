@@ -12,6 +12,10 @@ import { smartParse } from './utils/advancedParser';
 import { convertPDFToText } from './utils/pdfExtractor';
 import FileUploader from './components/FileUploader';
 import ImportPreview from './components/ImportPreview';
+import Modal from './components/Modal';
+import { useSyncedState } from './hooks/useSyncedState';
+import Auth from './components/Auth';
+import { User, Cloud, CloudOff } from 'lucide-react';
 import { STORAGE_KEYS } from './utils/storage';
 import { INITIAL_SUPPLIERS, CATEGORY_KEYWORDS } from './data/initialData';
 import SearchBar from './components/SearchBar';
@@ -21,7 +25,6 @@ import BOMTable from './components/BOMTable';
 import EditableBOMTable from './components/EditableBOMTable';
 import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
-import Modal from './components/Modal';
 
 const generateSafeId = () => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -29,8 +32,9 @@ const generateSafeId = () => {
 
 const LogisticsSystem = () => {
     const [activeTab, setActiveTab] = useState('projects');
-    const [projects, setProjects, projectsError] = useLocalStorage(STORAGE_KEYS.PROJECTS, []);
-    const [suppliers, setSuppliers, suppliersError] = useLocalStorage(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+    const [projects, setProjects, projectsError, user] = useSyncedState(STORAGE_KEYS.PROJECTS, []);
+    const [suppliers, setSuppliers, suppliersError] = useSyncedState(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+    const [showAuth, setShowAuth] = useState(false);
 
     // Migration: Ensure all projects have IDs
     React.useEffect(() => {
@@ -543,9 +547,32 @@ const LogisticsSystem = () => {
 
     return (
         <div className="min-h-screen bg-gray-50">
-            <div className="bg-blue-700 text-white p-6 shadow">
-                <h1 className="text-3xl font-bold">Construction Logistics Helper</h1>
-                <p className="text-blue-100 mt-1">Material Cost → BOM → Suppliers → WhatsApp</p>
+            <div className="bg-blue-700 text-white p-6 shadow flex justify-between items-center">
+                <div>
+                    <h1 className="text-3xl font-bold">Construction Logistics Helper</h1>
+                    <p className="text-blue-100 mt-1 flex items-center gap-2">
+                        {user ? <Cloud size={14} className="text-green-400" /> : <CloudOff size={14} className="text-blue-300" />}
+                        {user ? 'Cloud Sync Active' : 'Offline Mode (Local Storage)'}
+                    </p>
+                </div>
+                <div className="relative">
+                    {!user ? (
+                        <button
+                            onClick={() => setShowAuth(!showAuth)}
+                            className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-semibold transition-all backdrop-blur-md border border-white/20"
+                        >
+                            <User size={18} /> Sign In to Sync
+                        </button>
+                    ) : (
+                        <Auth user={user} />
+                    )}
+
+                    {showAuth && !user && (
+                        <div className="absolute right-0 top-full mt-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <Auth user={user} onSignOut={() => setShowAuth(false)} />
+                        </div>
+                    )}
+                </div>
             </div>
 
             <div className="bg-white border-b shadow-sm">
