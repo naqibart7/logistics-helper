@@ -2,16 +2,26 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../utils/supabase';
 
+// Helper to get or create a stable Device ID for unauthenticated syncing
+const getDeviceId = () => {
+    let id = localStorage.getItem('app_device_id');
+    if (!id) {
+        id = `dev-${Math.random().toString(36).substr(2, 9)}-${Date.now()}`;
+        localStorage.setItem('app_device_id', id);
+    }
+    return id;
+};
+
 export const useSyncedState = (key, defaultValue) => {
-    // 1. Initialize from localStorage
     const [value, setValue] = useState(() => {
         const stored = localStorage.getItem(key);
         return stored ? JSON.parse(stored) : defaultValue;
     });
 
     const [user, setUser] = useState(null);
+    const deviceId = getDeviceId();
 
-    // Watch for Auth changes
+    // 1. Listen for Auth Changes
     useEffect(() => {
         if (!supabase) return;
 
@@ -26,61 +36,66 @@ export const useSyncedState = (key, defaultValue) => {
         return () => subscription.unsubscribe();
     }, []);
 
-    // 2. Fetch from Supabase when user logs in
+    // 2. Initial Data Pull (Cloud -> Local)
     useEffect(() => {
-        if (!user || !supabase) return;
+        if (!supabase) return;
 
         const fetchData = async () => {
+            // Priority: User ID if logged in, otherwise Device ID
+            const identifierText = user ? 'user_id' : 'device_id';
+            const identifierValue = user ? user.id : deviceId;
+
             const { data, error } = await supabase
                 .from('user_data')
                 .select('value')
                 .eq('key', key)
-                .single();
+                .eq(identifierText, identifierValue)
+                .maybeSingle();
 
             if (data?.value) {
+                // Cloud has data - update local
                 setValue(data.value);
-                // Sync to local storage too
                 localStorage.setItem(key, JSON.stringify(data.value));
-            } else if (error && error.code === 'PGRST116') {
-                // Key not found in cloud, push local data for first time migration
+            } else if (!data && !error) {
+                // Cloud is empty - push local data up (Migration/First Time)
                 await supabase
                     .from('user_data')
                     .upsert({
-                        user_id: user.id,
-                        key: key,
-                        value: value
+                        key,
+                        value,
+                        user_id: user?.id || null,
+                        device_id: user ? null : deviceId
                     });
             }
         };
 
         fetchData();
-    }, [user, key]);
+    }, [user, key]); // Re-fetch/re-sync when login status changes
 
-    // 3. Save to Local & Cloud
+    // 3. Save Logic (Local -> Cloud)
     const setSyncedValue = async (newValueOrFn) => {
         const newValue = typeof newValueOrFn === 'function' ? newValueOrFn(value) : newValueOrFn;
 
-        // Update Local State
         setValue(newValue);
         localStorage.setItem(key, JSON.stringify(newValue));
 
-        // Update Cloud if authenticated
-        if (user && supabase) {
+        if (supabase) {
             try {
                 await supabase
                     .from('user_data')
                     .upsert({
-                        user_id: user.id,
-                        key: key,
-                        value: newValue
-                    });
+                        key,
+                        value: newValue,
+                        user_id: user?.id || null,
+                        device_id: user ? null : deviceId
+                    }, { onConflict: 'user_id,key' }); // Ensure unique constraint handling
             } catch (err) {
-                console.error('Failed to sync to cloud:', err);
+                console.error('Cloud Sync Error:', err);
             }
         }
     };
 
-    // Cross-tab sync for localStorage (fallback when offline/unauthenticated)
+    // 4. Cross-tab storage sync
     useEffect(() => {
         const handleStorage = (e) => {
             if (e.key === key && e.newValue) {
