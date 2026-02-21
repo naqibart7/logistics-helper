@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { supabase } from '../utils/supabase';
 import { LogIn, UserPlus, LogOut, Mail, Lock, Loader2 } from 'lucide-react';
 
-const Auth = ({ user, onSignOut }) => {
+const Auth = ({ user, onSignOut, onClose }) => {
     const [loading, setLoading] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -30,7 +30,7 @@ const Auth = ({ user, onSignOut }) => {
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
-                onSignOut?.(); // Close the popover on success
+                onClose?.(); // Correctly call the prop from App.jsx
             }
         } catch (error) {
             setMessage({ type: 'error', text: error.message });

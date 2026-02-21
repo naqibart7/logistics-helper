@@ -32,8 +32,8 @@ const generateSafeId = () => {
 
 const LogisticsSystem = () => {
     const [activeTab, setActiveTab] = useState('projects');
-    const [projects, setProjects, projectsError, user] = useSyncedState(STORAGE_KEYS.PROJECTS, []);
-    const [suppliers, setSuppliers, suppliersError] = useSyncedState(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+    const [projects, setProjects, user] = useSyncedState(STORAGE_KEYS.PROJECTS, []);
+    const [suppliers, setSuppliers] = useSyncedState(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
     const [showAuth, setShowAuth] = useState(false);
 
     // Migration: Ensure all projects have IDs
@@ -95,9 +95,7 @@ const LogisticsSystem = () => {
         whatsapp: ''
     });
 
-    if (projectsError || suppliersError) {
-        console.error('Storage error:', projectsError || suppliersError);
-    }
+    // Removal of old storage error logs
 
     const filteredProjects = useMemo(() => {
         return searchFilter(projects, projectSearch, ['name', 'client', 'location', 'quotationNumber', 'projectNumber']);
@@ -562,18 +560,19 @@ const LogisticsSystem = () => {
                 <div className="relative">
                     {!user ? (
                         <button
+                            id="auth-toggle-button"
                             onClick={() => setShowAuth(!showAuth)}
-                            className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-semibold transition-all backdrop-blur-md border border-white/20"
+                            className={`bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl flex items-center gap-2 font-semibold transition-all backdrop-blur-md border border-white/20 ${showAuth ? 'ring-2 ring-white/50 bg-white/20' : ''}`}
                         >
                             <User size={18} /> Sign In to Sync
                         </button>
                     ) : (
-                        <Auth user={user} />
+                        <Auth user={user} onSignOut={() => setShowAuth(false)} />
                     )}
 
                     {showAuth && !user && (
-                        <div className="absolute right-0 top-full mt-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                            <Auth user={user} onSignOut={() => setShowAuth(false)} />
+                        <div className="absolute right-0 top-full mt-4 z-[100] animate-in fade-in slide-in-from-top-2 duration-200">
+                            <Auth user={user} onClose={() => setShowAuth(false)} />
                         </div>
                     )}
                 </div>
