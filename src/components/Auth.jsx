@@ -55,61 +55,70 @@ const Auth = ({ user, onSignOut }) => {
     }
 
     return (
-        <div className="bg-white p-6 rounded-2xl border shadow-xl w-[320px]">
-            <h3 className="text-xl font-bold mb-1 flex items-center gap-2">
-                {isSignUp ? <UserPlus className="text-blue-600" /> : <LogIn className="text-blue-600" />}
-                {isSignUp ? 'Create Account' : 'Sign In'}
+        <div className="bg-white p-8 rounded-3xl border-2 border-slate-100 shadow-2xl w-[360px] transform transition-all">
+            <h3 className="text-2xl font-black mb-1 flex items-center gap-3 text-slate-800">
+                {isSignUp ? <UserPlus className="text-blue-600" size={24} /> : <LogIn className="text-blue-600" size={24} />}
+                {isSignUp ? 'Create Account' : 'Welcome Back'}
             </h3>
-            <p className="text-gray-500 text-xs mb-6">
+            <p className="text-slate-500 text-sm font-medium mb-8">
                 {isSignUp
                     ? 'Sync your projects across all devices'
-                    : 'Access your projects from anywhere'}
+                    : 'Sign in to access your cloud data'}
             </p>
 
-            <form onSubmit={handleAuth} className="space-y-4">
-                <div className="relative">
-                    <Mail className="absolute left-3 top-3 text-gray-400" size={16} />
-                    <input
-                        type="email"
-                        placeholder="Email Address"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                        required
-                    />
+            <form onSubmit={handleAuth} className="space-y-5">
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-400 uppercase ml-1">Email Address</label>
+                    <div className="relative group">
+                        <Mail className="absolute left-4 top-3.5 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+                        <input
+                            type="email"
+                            placeholder="name@company.com"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl text-[15px] font-semibold text-slate-800 placeholder:text-slate-300 focus:bg-white focus:border-blue-500 outline-none transition-all shadow-sm"
+                            required
+                        />
+                    </div>
                 </div>
-                <div className="relative">
-                    <Lock className="absolute left-3 top-3 text-gray-400" size={16} />
-                    <input
-                        type="password"
-                        placeholder="Password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                        required
-                    />
+
+                <div className="space-y-1.5">
+                    <label className="text-xs font-bold text-slate-400 uppercase ml-1">Password</label>
+                    <div className="relative group">
+                        <Lock className="absolute left-4 top-3.5 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+                        <input
+                            type="password"
+                            placeholder="••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border-2 border-transparent rounded-2xl text-[15px] font-semibold text-slate-800 placeholder:text-slate-300 focus:bg-white focus:border-blue-500 outline-none transition-all shadow-sm"
+                            required
+                        />
+                    </div>
                 </div>
 
                 {message && (
-                    <div className={`text-[11px] p-3 rounded-lg flex items-start gap-2 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'
+                    <div className={`text-xs p-4 rounded-2xl font-semibold flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 ${message.type === 'success'
+                            ? 'bg-emerald-50 text-emerald-700 border-2 border-emerald-100'
+                            : 'bg-rose-50 text-rose-700 border-2 border-rose-100'
                         }`}>
-                        {message.text}
+                        <div className="mt-0.5">{message.text}</div>
                     </div>
                 )}
 
                 <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-blue-600 text-white py-2.5 rounded-xl font-bold text-sm hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200"
+                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-[15px] hover:bg-blue-700 active:scale-[0.98] transition-all flex items-center justify-center gap-3 shadow-xl shadow-blue-200 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    {loading ? <Loader2 className="animate-spin" size={18} /> : (isSignUp ? 'Sign Up' : 'Sign In')}
+                    {loading ? <Loader2 className="animate-spin" size={20} /> : (isSignUp ? 'Create My Account' : 'Sign In Now')}
                 </button>
             </form>
 
-            <div className="mt-6 pt-6 border-t text-center">
+            <div className="mt-8 pt-6 border-t border-slate-100 text-center">
                 <button
                     onClick={() => setIsSignUp(!isSignUp)}
-                    className="text-xs font-medium text-gray-500 hover:text-blue-600"
+                    className="text-sm font-bold text-slate-400 hover:text-blue-600 transition-colors"
                 >
                     {isSignUp ? 'Already have an account? Sign In' : "Don't have an account? Sign Up"}
                 </button>
