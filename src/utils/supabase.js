@@ -1,13 +1,8 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Using provided credentials directly to ensure availability in production
+const supabaseUrl = 'https://gqatjazyjdxrfpnmggta.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdxYXRqYXp5amR4cmZwbm1nZ3RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzOTgwODEsImV4cCI6MjA4Njk3NDA4MX0.m6jiD7UTcfvFQlNOTNUB0lI8kGitK0LYoqc-r5W2mE';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Supabase credentials missing. Cloud sync will be disabled.');
-}
-
-export const supabase = (supabaseUrl && supabaseAnonKey)
-    ? createClient(supabaseUrl, supabaseAnonKey)
-    : null;
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);

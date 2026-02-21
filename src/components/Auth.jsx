@@ -17,12 +17,20 @@ const Auth = ({ user, onSignOut }) => {
 
         try {
             if (isSignUp) {
-                const { error } = await supabase.auth.signUp({ email, password });
+                const { data, error } = await supabase.auth.signUp({ email, password });
                 if (error) throw error;
-                setMessage({ type: 'success', text: 'Success! Please check your email for the confirmation link.' });
+
+                if (data?.user?.identities?.length === 0) {
+                    setMessage({ type: 'error', text: 'This email is already registered. Please try signing in.' });
+                } else {
+                    setMessage({ type: 'success', text: 'Account created! Please CHECK YOUR EMAIL for the verification link before signing in.' });
+                    // Give user time to read, then switch to sign in
+                    setTimeout(() => setIsSignUp(false), 5000);
+                }
             } else {
                 const { error } = await supabase.auth.signInWithPassword({ email, password });
                 if (error) throw error;
+                onSignOut?.(); // Close the popover on success
             }
         } catch (error) {
             setMessage({ type: 'error', text: error.message });
@@ -99,8 +107,8 @@ const Auth = ({ user, onSignOut }) => {
 
                 {message && (
                     <div className={`text-xs p-4 rounded-2xl font-semibold flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 ${message.type === 'success'
-                            ? 'bg-emerald-50 text-emerald-700 border-2 border-emerald-100'
-                            : 'bg-rose-50 text-rose-700 border-2 border-rose-100'
+                        ? 'bg-emerald-50 text-emerald-700 border-2 border-emerald-100'
+                        : 'bg-rose-50 text-rose-700 border-2 border-rose-100'
                         }`}>
                         <div className="mt-0.5">{message.text}</div>
                     </div>

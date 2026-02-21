@@ -550,9 +550,13 @@ const LogisticsSystem = () => {
             <div className="bg-blue-700 text-white p-6 shadow flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-bold">Construction Logistics Helper</h1>
-                    <p className="text-blue-100 mt-1 flex items-center gap-2">
-                        {user ? <Cloud size={14} className="text-green-400" /> : <CloudOff size={14} className="text-blue-300" />}
-                        {user ? 'Cloud Sync Active' : 'Offline Mode (Local Storage)'}
+                    <p className="text-blue-100 mt-1 flex items-center gap-2 text-sm">
+                        <Cloud size={14} className={user ? "text-green-400" : "text-blue-300"} />
+                        {user ? (
+                            <span className="font-semibold text-green-400">Cloud Sync Active • {user.email}</span>
+                        ) : (
+                            <span className="text-blue-200">Cloud Backup Active (Anonymous)</span>
+                        )}
                     </p>
                 </div>
                 <div className="relative">
