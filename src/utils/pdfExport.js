@@ -156,7 +156,7 @@ export const exportBOMToPDF = (project) => {
         doc.setFont('helvetica', 'italic');
         doc.setFontSize(8);
         doc.setTextColor(148, 163, 184); // Slate-400
-        doc.text(`Construction Logistics Helper - Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text(`Artseven Special Force Logistic - Page ${i} of ${totalPages}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
     }
 
     const fileName = `BOM_${project.projectNumber || project.name || 'Project'}_${new Date().toISOString().split('T')[0]}.pdf`;

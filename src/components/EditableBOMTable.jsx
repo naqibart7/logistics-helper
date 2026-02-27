@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Trash2, Edit2, Save, X, Plus, ChevronDown, ChevronRight } from 'lucide-react';
+import { Trash2, Edit2, Save, X, Plus, ChevronDown, ChevronRight, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 import { generateId } from '../utils/helpers';
+import { AutocompleteItemInput } from './AutocompleteItemInput';
 
 const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = true, defaultCategory = '' }) => {
     const [editingId, setEditingId] = useState(null);
@@ -136,11 +137,20 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                     />
                                 </td>
                                 <td className="px-3 py-2">
-                                    <input
+                                    <AutocompleteItemInput
                                         value={newItemForm.item}
-                                        onChange={e => setNewItemForm({ ...newItemForm, item: e.target.value })}
+                                        onChange={val => setNewItemForm({ ...newItemForm, item: val })}
+                                        onSelect={item => {
+                                            const newQty = parseFloat(newItemForm.quantity) || 0;
+                                            setNewItemForm({
+                                                ...newItemForm,
+                                                item: item.name,
+                                                category: item.category,
+                                                pricePerUnit: item.price,
+                                                price: newQty && item.price ? (newQty * item.price).toFixed(2) : ''
+                                            });
+                                        }}
                                         placeholder="Item name *"
-                                        className="w-full border rounded px-2 py-1 text-sm"
                                         autoFocus
                                     />
                                 </td>
@@ -255,10 +265,20 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                     />
                                                 </td>
                                                 <td className="px-3 py-2">
-                                                    <input
+                                                    <AutocompleteItemInput
                                                         value={editForm.item}
-                                                        onChange={e => setEditForm({ ...editForm, item: e.target.value })}
-                                                        className="w-full border rounded px-2 py-1 text-sm"
+                                                        onChange={val => setEditForm({ ...editForm, item: val })}
+                                                        onSelect={item => {
+                                                            const eqty = parseFloat(editForm.quantity) || 0;
+                                                            setEditForm({
+                                                                ...editForm,
+                                                                item: item.name,
+                                                                category: item.category,
+                                                                pricePerUnit: item.price,
+                                                                price: eqty && item.price ? eqty * item.price : null
+                                                            });
+                                                        }}
+                                                        placeholder="Item name"
                                                     />
                                                 </td>
                                                 <td className="px-3 py-2">
@@ -331,7 +351,27 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                             // View mode
                                             <>
                                                 <td className="px-3 py-2 text-[10px] text-gray-400 font-medium uppercase">{m.category}</td>
-                                                <td className="px-3 py-2 font-medium text-gray-700">{m.item}</td>
+                                                <td className="px-3 py-2 font-medium text-gray-700">
+                                                    <div>{m.item}</div>
+                                                    {m.standardItem && m.item !== m.standardItem && (
+                                                        <div
+                                                            className="text-[10px] text-blue-600 mt-0.5 flex items-center gap-1 bg-blue-50 w-fit px-1.5 py-0.5 rounded cursor-pointer hover:bg-blue-100 transition-colors"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onUpdate(m.id, {
+                                                                    ...m,
+                                                                    item: m.standardItem,
+                                                                    pricePerUnit: m.standardPrice,
+                                                                    price: m.quantity && m.standardPrice ? m.quantity * m.standardPrice : null,
+                                                                    category: m.standardCategory
+                                                                });
+                                                            }}
+                                                            title="Click to apply standard item mapping"
+                                                        >
+                                                            <Check size={10} /> Match: {m.standardItem}
+                                                        </div>
+                                                    )}
+                                                </td>
                                                 <td className="px-3 py-2 text-right font-mono text-gray-900">{m.quantity}</td>
                                                 <td className="px-3 py-2 text-gray-500">{m.unit}</td>
                                                 {showPrices && (

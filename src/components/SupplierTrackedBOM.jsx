@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle } from 'lucide-react';
+import { Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 
 const STATUS_STYLES = {
@@ -107,6 +107,24 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                         <div className="flex items-start justify-between">
                             <div>
                                 <div className="font-medium text-gray-900">{m.item}</div>
+                                {m.standardItem && m.item !== m.standardItem && (
+                                    <div
+                                        className="text-[10px] text-blue-600 mt-1 flex items-center gap-1 bg-white w-fit px-1.5 py-0.5 rounded border border-blue-200 cursor-pointer hover:bg-blue-50 transition-colors"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUpdate(m.id, {
+                                                ...m,
+                                                item: m.standardItem,
+                                                pricePerUnit: m.standardPrice,
+                                                price: m.quantity && m.standardPrice ? m.quantity * m.standardPrice : null,
+                                                category: m.standardCategory
+                                            });
+                                        }}
+                                        title="Click to apply standard item mapping"
+                                    >
+                                        <Check size={10} /> Match: {m.standardItem}
+                                    </div>
+                                )}
                                 <div className="text-sm text-gray-600 mt-1">
                                     <span className="font-mono">{m.quantity} {m.unit}</span>
                                     {showPrices && m.pricePerUnit && (
@@ -115,7 +133,7 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                                         </span>
                                     )}
                                 </div>
-                                <div className="text-xs text-gray-500 mt-1">
+                                <div className="text-xs text-gray-500 mt-1 uppercase">
                                     {m.category}
                                 </div>
                             </div>

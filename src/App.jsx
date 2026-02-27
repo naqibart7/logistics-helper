@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2 } from 'lucide-react';
+import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId, searchFilter } from './utils/helpers';
 import { exportBOMToCSV } from './utils/csvExport';
@@ -21,10 +21,10 @@ import { INITIAL_SUPPLIERS, CATEGORY_KEYWORDS } from './data/initialData';
 import SearchBar from './components/SearchBar';
 import ProjectCard from './components/ProjectCard';
 import SupplierCard from './components/SupplierCard';
-import BOMTable from './components/BOMTable';
 import EditableBOMTable from './components/EditableBOMTable';
 import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
+import { AutocompleteItemInput } from './components/AutocompleteItemInput';
 
 const generateSafeId = () => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -547,7 +547,7 @@ const LogisticsSystem = () => {
         <div className="min-h-screen bg-gray-50">
             <div className="bg-blue-700 text-white p-6 shadow flex justify-between items-center">
                 <div>
-                    <h1 className="text-3xl font-bold">Construction Logistics Helper</h1>
+                    <h1 className="text-3xl font-bold">Artseven Special Force Logistic</h1>
                     <p className="text-blue-100 mt-1 flex items-center gap-2 text-sm">
                         <Cloud size={14} className={user ? "text-green-400" : "text-blue-300"} />
                         {user ? (
@@ -813,12 +813,24 @@ const LogisticsSystem = () => {
                                                     onChange={e => setMaterialForm({ ...materialForm, category: e.target.value })}
                                                     className="border rounded-lg px-3 py-2 text-sm"
                                                 />
-                                                <input
-                                                    placeholder="Item *"
-                                                    value={materialForm.item}
-                                                    onChange={e => setMaterialForm({ ...materialForm, item: e.target.value })}
-                                                    className="border rounded-lg px-3 py-2 text-sm col-span-2"
-                                                />
+                                                <div className="col-span-2">
+                                                    <AutocompleteItemInput
+                                                        placeholder="Item *"
+                                                        value={materialForm.item}
+                                                        onChange={val => setMaterialForm({ ...materialForm, item: val })}
+                                                        onSelect={item => {
+                                                            const qty = parseFloat(materialForm.quantity) || 0;
+                                                            setMaterialForm({
+                                                                ...materialForm,
+                                                                item: item.name,
+                                                                category: item.category,
+                                                                pricePerUnit: item.price,
+                                                                price: qty && item.price ? (qty * item.price).toFixed(2) : ''
+                                                            });
+                                                        }}
+                                                        className="border rounded-lg px-3 py-2 text-sm w-full"
+                                                    />
+                                                </div>
                                                 <input
                                                     placeholder="Qty"
                                                     value={materialForm.quantity}
@@ -839,10 +851,22 @@ const LogisticsSystem = () => {
                                                 </button>
                                             </div>
 
-                                            <BOMTable
+                                            <EditableBOMTable
                                                 materials={projectForm.materials}
+                                                onUpdate={(id, updates) => {
+                                                    setProjectForm(prev => ({
+                                                        ...prev,
+                                                        materials: prev.materials.map(m => m.id === id ? { ...m, ...updates } : m)
+                                                    }));
+                                                }}
                                                 onRemove={removeMaterial}
-                                                editable={true}
+                                                onAdd={(material) => {
+                                                    setProjectForm(prev => ({
+                                                        ...prev,
+                                                        materials: [...prev.materials, { ...material, id: generateSafeId() }]
+                                                    }));
+                                                }}
+                                                showPrices={true}
                                             />
                                         </div>
 

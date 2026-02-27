@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Package, CheckCircle, Circle, AlertCircle } from 'lucide-react';
+import { Package, CheckCircle, Circle, AlertCircle, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 
 const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => {
@@ -52,8 +52,8 @@ const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => 
             <div
                 key={m.id}
                 className={`border-l-4 rounded-lg p-4 transition-all ${isChecked
-                        ? 'bg-green-50 border-green-500 opacity-70'
-                        : 'bg-white border-gray-300 hover:border-blue-400'
+                    ? 'bg-green-50 border-green-500 opacity-70'
+                    : 'bg-white border-gray-300 hover:border-blue-400'
                     }`}
             >
                 <div className="flex items-start gap-4">
@@ -74,6 +74,24 @@ const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => 
                         <div className="flex items-start justify-between">
                             <div className={isChecked ? 'line-through text-gray-500' : ''}>
                                 <div className="font-semibold text-gray-900">{m.item}</div>
+                                {m.standardItem && m.item !== m.standardItem && (
+                                    <div
+                                        className="text-[10px] text-blue-600 mt-1 flex items-center gap-1 bg-white w-fit px-1.5 py-0.5 rounded border border-blue-200 cursor-pointer hover:bg-blue-50 transition-colors"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onUpdate(m.id, {
+                                                ...m,
+                                                item: m.standardItem,
+                                                pricePerUnit: m.standardPrice,
+                                                price: m.quantity && m.standardPrice ? m.quantity * m.standardPrice : null,
+                                                category: m.standardCategory
+                                            });
+                                        }}
+                                        title="Click to apply standard item mapping"
+                                    >
+                                        <Check size={10} /> Match: {m.standardItem}
+                                    </div>
+                                )}
                                 <div className="text-sm text-gray-600 mt-1">
                                     <span className="font-mono">{m.quantity} {m.unit}</span>
                                     {showPrices && m.pricePerUnit && (
@@ -82,7 +100,7 @@ const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => 
                                         </span>
                                     )}
                                 </div>
-                                <div className="text-xs text-gray-500 mt-1">
+                                <div className="text-xs text-gray-500 mt-1 uppercase">
                                     {m.category}
                                 </div>
                             </div>

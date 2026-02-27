@@ -1,9 +1,13 @@
 // ============================================================================
 // ADVANCED PARSER FOR CONSTRUCTION MATERIAL COST & JOB COST DOCUMENTS
 // ============================================================================
+// ============================================================================
 // Supports: Material Cost format (multiple variations) & Job Cost format
 // Auto-detects format and column structure
 // ============================================================================
+import Fuse from 'fuse.js';
+import { standardCatalog } from '../data/standardCatalog';
+
 
 /**
  * Generate unique ID for materials
@@ -516,10 +520,30 @@ export const smartParse = (text) => {
             metadata.totalProject = calculatedTotal.toFixed(2);
         }
 
+        // Fuzzy match materials with standard catalog
+        if (materials.length > 0) {
+            const fuse = new Fuse(standardCatalog, {
+                keys: ['name'],
+                threshold: 0.4,
+                includeScore: true
+            });
+
+            materials.forEach(material => {
+                const results = fuse.search(material.item);
+                if (results.length > 0 && results[0].score < 0.4) {
+                    const match = results[0].item;
+                    material.standardItem = match.name;
+                    material.standardPrice = match.price;
+                    material.standardCategory = match.category;
+                    material.matchScore = results[0].score;
+                }
+            });
+        }
+
         // Add statistics
         const totalQuantity = materials.reduce((sum, m) => sum + (m.quantity || 0), 0);
         const totalPrice = materials.reduce((sum, m) => sum + (m.total || 0), 0);
-        const categories = [...new Set(materials.map(m => m.category))];
+        const categories = [...new Set(materials.map(m => m.category || 'MATERIALS'))];
 
         const stats = {
             totalItems: materials.length,
