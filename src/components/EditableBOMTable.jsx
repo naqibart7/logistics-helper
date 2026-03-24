@@ -1,10 +1,12 @@
+5
+1555
 import React, { useState, useMemo } from 'react';
 import { Trash2, Edit2, Save, X, Plus, ChevronDown, ChevronRight, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 import { generateId } from '../utils/helpers';
 import { AutocompleteItemInput } from './AutocompleteItemInput';
 
-const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = true, defaultCategory = '' }) => {
+const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = true, defaultCategory = '', catalog }) => {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
     const [addingNew, setAddingNew] = useState(false);
@@ -152,6 +154,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                         }}
                                         placeholder="Item name *"
                                         autoFocus
+                                        catalog={catalog}
                                     />
                                 </td>
                                 <td className="px-3 py-2">
@@ -279,6 +282,7 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                             });
                                                         }}
                                                         placeholder="Item name"
+                                                        catalog={catalog}
                                                     />
                                                 </td>
                                                 <td className="px-3 py-2">

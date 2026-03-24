@@ -1,13 +1,19 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import Fuse from 'fuse.js';
 import { standardCatalog } from '../data/standardCatalog';
 
-const fuse = new Fuse(standardCatalog, { keys: ['name'], threshold: 0.3 });
-
-export const AutocompleteItemInput = ({ value, onChange, onSelect, placeholder, autoFocus, className }) => {
+export const AutocompleteItemInput = ({ value, onChange, onSelect, placeholder, autoFocus, className, catalog }) => {
     const [suggestions, setSuggestions] = useState([]);
     const [showSuggestions, setShowSuggestions] = useState(false);
     const wrapperRef = useRef(null);
+
+    // Use provided catalog or fall back to standardCatalog
+    const activeCatalog = catalog || standardCatalog;
+
+    // Rebuild Fuse index whenever the catalog changes
+    const fuse = useMemo(() => {
+        return new Fuse(activeCatalog, { keys: ['name'], threshold: 0.3 });
+    }, [activeCatalog]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {

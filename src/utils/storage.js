@@ -33,5 +33,6 @@ export const storage = {
 
 export const STORAGE_KEYS = {
     PROJECTS: 'logisticsProjects',
-    SUPPLIERS: 'logisticsSuppliers'
+    SUPPLIERS: 'logisticsSuppliers',
+    ITEM_CATALOG: 'logisticsItemCatalog'
 };

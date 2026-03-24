@@ -24,7 +24,10 @@ import SupplierCard from './components/SupplierCard';
 import EditableBOMTable from './components/EditableBOMTable';
 import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
+import ItemDatabase from './components/ItemDatabase';
 import { AutocompleteItemInput } from './components/AutocompleteItemInput';
+import { standardCatalog } from './data/standardCatalog';
+import { List } from 'lucide-react';
 
 const generateSafeId = () => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -34,6 +37,7 @@ const LogisticsSystem = () => {
     const [activeTab, setActiveTab] = useState('projects');
     const [projects, setProjects, user] = useSyncedState(STORAGE_KEYS.PROJECTS, []);
     const [suppliers, setSuppliers] = useSyncedState(STORAGE_KEYS.SUPPLIERS, INITIAL_SUPPLIERS);
+    const [itemCatalog, setItemCatalog] = useSyncedState(STORAGE_KEYS.ITEM_CATALOG, standardCatalog);
     const [showAuth, setShowAuth] = useState(false);
 
     // Migration: Ensure all projects have IDs
@@ -595,6 +599,13 @@ const LogisticsSystem = () => {
                         >
                             <Database size={20} /> Suppliers
                         </button>
+                        <button
+                            onClick={() => setActiveTab('items')}
+                            className={`py-4 px-3 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'items' ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'
+                                }`}
+                        >
+                            <List size={20} /> Items
+                        </button>
                     </div>
                 </div>
             </div>
@@ -829,6 +840,7 @@ const LogisticsSystem = () => {
                                                             });
                                                         }}
                                                         className="border rounded-lg px-3 py-2 text-sm w-full"
+                                                        catalog={itemCatalog}
                                                     />
                                                 </div>
                                                 <input
@@ -867,6 +879,7 @@ const LogisticsSystem = () => {
                                                     }));
                                                 }}
                                                 showPrices={true}
+                                                catalog={itemCatalog}
                                             />
                                         </div>
 
@@ -1063,6 +1076,7 @@ const LogisticsSystem = () => {
                                                 onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
                                                 onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
                                                 showPrices={true}
+                                                catalog={itemCatalog}
                                             />
                                         )}
                                     </div>
@@ -1348,6 +1362,10 @@ const LogisticsSystem = () => {
                             </div>
                         </Modal>
                     </>
+                )}
+
+                {activeTab === 'items' && (
+                    <ItemDatabase catalog={itemCatalog} setCatalog={setItemCatalog} />
                 )}
             </div>
         </div>
