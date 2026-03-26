@@ -3,10 +3,8 @@ import { Copy, CheckCircle, Calendar, ClipboardList, ChevronDown, FileUp, X, Spa
 import { convertPDFToText } from '../utils/pdfExtractor';
 import { smartParse } from '../utils/advancedParser';
 
-const MondayEntryGenerator = ({ projects, suppliers }) => {
+const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
     // Form state
-    const [selectedProjectId, setSelectedProjectId] = useState('');
-    const [selectedSupplierId, setSelectedSupplierId] = useState('');
     const [form, setForm] = useState({
         date: '',
         projectName: '',
@@ -23,6 +21,8 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
     const [invoiceFile, setInvoiceFile] = useState(null);
     const [isParsing, setIsParsing] = useState(false);
     const [showScriptModal, setShowScriptModal] = useState(false);
+    const [showWarningModal, setShowWarningModal] = useState(false);
+    const [matchedSupplierId, setMatchedSupplierId] = useState(null);
 
     // Load defaults from localStorage
     useEffect(() => {
@@ -45,35 +45,79 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
         }
     }, [form.requesterName]);
 
-    // Auto-fill from selected project
+    // SMART MAPPING: Auto-fill from Project Number
     useEffect(() => {
-        if (!selectedProjectId) return;
-        const project = projects.find(p => p.id === selectedProjectId);
+        if (!form.projectNumber) return;
+        const project = projects.find(p =>
+            p.projectNumber === form.projectNumber ||
+            (p.quotationNumber && p.quotationNumber === form.projectNumber)
+        );
+
         if (project) {
             const cats = [...new Set((project.materials || []).map(m => (m.category || '').toUpperCase()))].filter(Boolean);
             const catStr = cats.join(' / ');
-            setForm(prev => ({
-                ...prev,
-                projectName: project.name || '',
-                projectNumber: project.projectNumber || '',
-                detailPayment: prev.detailPayment || `FULL PAYMENT - ${catStr || 'MATERIALS'} - ${project.name || ''}`
-            }));
+            setForm(prev => {
+                // Only update if the project name is empty or different, to avoid infinite loops if user edits it
+                if (prev.projectName !== project.name) {
+                    return {
+                        ...prev,
+                        projectName: project.name || '',
+                        detailPayment: prev.detailPayment || `FULL PAYMENT - ${catStr || 'MATERIALS'} - ${project.name || ''}`
+                    };
+                }
+                return prev;
+            });
         }
-    }, [selectedProjectId, projects]);
+    }, [form.projectNumber, projects]);
 
-    // Auto-fill from selected supplier
+    // SMART MAPPING: Auto-fill from Supplier Name & Learn New Bank Details
     useEffect(() => {
-        if (!selectedSupplierId) return;
-        const supplier = suppliers.find(s => s.id === selectedSupplierId);
-        if (supplier) {
-            setForm(prev => ({
-                ...prev,
-                companyAccountName: supplier.name || '',
-                accountNumber: supplier.accountNumber || prev.accountNumber,
-                bankName: supplier.bankName || prev.bankName
-            }));
+        if (!form.companyAccountName) {
+            setMatchedSupplierId(null);
+            return;
         }
-    }, [selectedSupplierId, suppliers]);
+
+        const exactMatch = suppliers.find(s => s.name.toLowerCase() === form.companyAccountName.toLowerCase());
+
+        if (exactMatch) {
+            setMatchedSupplierId(exactMatch.id);
+            // Auto fill bank details if the supplier has them known
+            if (exactMatch.accountNumber || exactMatch.bankName) {
+                setForm(prev => {
+                    if (prev.accountNumber !== exactMatch.accountNumber || prev.bankName !== exactMatch.bankName) {
+                        return {
+                            ...prev,
+                            accountNumber: exactMatch.accountNumber || prev.accountNumber,
+                            bankName: exactMatch.bankName || prev.bankName
+                        };
+                    }
+                    return prev;
+                });
+            }
+        } else {
+            setMatchedSupplierId(null);
+        }
+    }, [form.companyAccountName, suppliers]);
+
+    // Reverse Learning: Save manual bank details to known supplier
+    useEffect(() => {
+        if (matchedSupplierId && onUpdateSupplier) {
+            const supplier = suppliers.find(s => s.id === matchedSupplierId);
+            if (supplier && form.accountNumber && form.bankName) {
+                // If the user typed new bank details that differ from what we have saved
+                if (supplier.accountNumber !== form.accountNumber || supplier.bankName !== form.bankName) {
+                    const timer = setTimeout(() => {
+                        console.log("Learning new bank details for", supplier.name);
+                        onUpdateSupplier(supplier.id, {
+                            accountNumber: form.accountNumber,
+                            bankName: form.bankName
+                        });
+                    }, 1000); // 1s debounce
+                    return () => clearTimeout(timer);
+                }
+            }
+        }
+    }, [form.accountNumber, form.bankName, matchedSupplierId, suppliers, onUpdateSupplier]);
 
     // Handle PDF Extraction
     const handleInvoiceUpload = async (file) => {
@@ -123,8 +167,18 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
         });
     };
 
+    // Pre-flight check before copying
+    const handleCopyMagicDataRequest = () => {
+        if (!form.projectName || !form.amountInvoice) {
+            setShowWarningModal(true);
+        } else {
+            executeCopyMagicData();
+        }
+    };
+
     // Solution B: Copy as "Magic JSON" for the automation script
-    const copyMagicData = () => {
+    const executeCopyMagicData = () => {
+        setShowWarningModal(false);
         const payload = {
             type: "MONDAY_AUTOFILL_V1",
             payload: {
@@ -221,8 +275,6 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
 })();`.trim();
 
     const resetForm = () => {
-        setSelectedProjectId('');
-        setSelectedSupplierId('');
         setForm(prev => ({
             date: '',
             projectName: '',
@@ -283,7 +335,7 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
                     </button>
                     {hasOutput && (
                         <button
-                            onClick={copyMagicData}
+                            onClick={handleCopyMagicDataRequest}
                             className={`flex items-center gap-2 text-sm px-6 py-2.5 rounded-xl font-black transition-all shadow-md transform active:scale-95 ${copiedField === '__magic__'
                                 ? 'bg-green-500 text-white translate-y-[-2px] shadow-lg'
                                 : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
@@ -344,11 +396,17 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
                         </div>
 
                         <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide ms-1">Supplier Link</label>
-                            <select value={selectedSupplierId} onChange={e => setSelectedSupplierId(e.target.value)} className="w-full bg-blue-50/50 border-0 focus:ring-2 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-sm font-medium">
-                                <option value="">— Link to Supplier DB —</option>
-                                {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                            </select>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide ms-1">Company Account Name</label>
+                            <input
+                                value={form.companyAccountName}
+                                onChange={e => setForm({ ...form, companyAccountName: e.target.value })}
+                                placeholder="Type supplier name..."
+                                list="suplist"
+                                className="w-full bg-gray-50 border-0 focus:ring-2 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-sm font-medium"
+                            />
+                            <datalist id="suplist">
+                                {suppliers.map(s => <option key={s.id} value={s.name} />)}
+                            </datalist>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
@@ -397,7 +455,7 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
                             <h3 className="font-bold text-gray-900 flex items-center gap-2 text-sm uppercase tracking-tight">
                                 <Zap size={16} fill="#FACC15" color="#FACC15" /> Magic Fill Data
                             </h3>
-                            <button onClick={copyMagicData} className="text-xs text-blue-600 font-bold hover:underline">Copy Magic Data</button>
+                            <button onClick={handleCopyMagicDataRequest} className="text-xs text-blue-600 font-bold hover:underline">Copy Magic Data</button>
                         </div>
 
                         {!hasOutput ? (
@@ -494,6 +552,35 @@ const MondayEntryGenerator = ({ projects, suppliers }) => {
                                     Close & Continue
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Missing Required Fields Warning Modal */}
+            {showWarningModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden text-center p-6">
+                        <div className="w-16 h-16 bg-amber-100 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                            <Info size={32} />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-900 mb-2">Missing Important Info</h3>
+                        <p className="text-gray-500 text-sm mb-6">
+                            You're missing the <b>Project Name</b> or <b>Amount</b>. Missing these might lead to incomplete data in monday.com.
+                        </p>
+                        <div className="flex gap-3 justify-center">
+                            <button
+                                onClick={() => setShowWarningModal(false)}
+                                className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-100 rounded-xl transition-colors"
+                            >
+                                Wait, let me fill it
+                            </button>
+                            <button
+                                onClick={executeCopyMagicData}
+                                className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl transition-colors shadow-md"
+                            >
+                                Copy anyway
+                            </button>
                         </div>
                     </div>
                 </div>

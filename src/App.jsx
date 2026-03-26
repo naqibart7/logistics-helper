@@ -1442,7 +1442,11 @@ const LogisticsSystem = () => {
                 )}
 
                 {activeTab === 'monday' && (
-                    <MondayEntryGenerator projects={projects} suppliers={suppliers} />
+                    <MondayEntryGenerator
+                        projects={projects}
+                        suppliers={suppliers}
+                        onUpdateSupplier={updateSupplier}
+                    />
                 )}
             </div>
         </div>
