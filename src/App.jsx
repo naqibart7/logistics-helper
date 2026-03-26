@@ -25,9 +25,10 @@ import EditableBOMTable from './components/EditableBOMTable';
 import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
 import ItemDatabase from './components/ItemDatabase';
+import MondayEntryGenerator from './components/MondayEntryGenerator';
 import { AutocompleteItemInput } from './components/AutocompleteItemInput';
 import { standardCatalog } from './data/standardCatalog';
-import { List } from 'lucide-react';
+import { List, ClipboardList } from 'lucide-react';
 
 const generateSafeId = () => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -96,7 +97,9 @@ const LogisticsSystem = () => {
         categories: '',
         location: '',
         contact: '',
-        whatsapp: ''
+        whatsapp: '',
+        accountNumber: '',
+        bankName: ''
     });
 
     // Removal of old storage error logs
@@ -431,34 +434,81 @@ const LogisticsSystem = () => {
 
         if (supplierMaterials.length === 0) return '';
 
+        // Determine the primary template based on supplier categories
+        const WHATSAPP_TEMPLATES = {
+            'Gypsum Board': {
+                icon: '🏗️',
+                intro: 'Hi, nak tanya stok & order barang partition/gypsum ni ya:',
+                requests: ['Ada stock board & metal stud?', 'Boleh hantar lori hantu/site?', 'Minta Best Price/Quotation ya 🙏']
+            },
+            'Paint': {
+                icon: '🎨',
+                intro: 'Hi, nak order cat/paint items ni ya:',
+                requests: ['Ada stock code ni?', 'Boleh mix/bancuh harini?', 'Minta Quotation/Invoice ya 🙏']
+            },
+            'Lighting': {
+                icon: '💡',
+                intro: 'Hi, nak tanya quotation untuk lighting items ni:',
+                requests: ['Ada stock item ni?', 'Item ni ada warranty?', 'Minta Quo/Best Price ya 🙏']
+            },
+            'PVC Panel': {
+                icon: '🪵',
+                intro: 'Hi, nak order PVC/Fluted panel ni ya:',
+                requests: ['Ada stock code & warna ni?', 'Boleh hantar ke site?', 'Minta Quotation ya 🙏']
+            },
+            'Hardware Tools': {
+                icon: '🛠️',
+                intro: 'Hi, nak order hardware items ni ya:',
+                requests: ['Ada stock item ni?', 'Boleh hantar urgent/grab?', 'Minta Quotation/Invoice ya 🙏']
+            },
+            'Electrical': {
+                icon: '🔌',
+                intro: 'Hi, nak tanya quotation untuk barang elektrik ni:',
+                requests: ['Ada stock item ni?', 'Item ni SIRIM approve?', 'Minta Quotation ya 🙏']
+            }
+        };
+
+        // Find best matching template
+        const matchedCat = supplier.categories.find(c => WHATSAPP_TEMPLATES[c]) || 'Hardware Tools';
+        const template = WHATSAPP_TEMPLATES[matchedCat] || {
+            icon: '🟦',
+            intro: 'Hi,\nNak order item ni ya:',
+            requests: ['Ada stock item?', 'Boleh hantar ke site?', 'Minta bil harga / Quotation (PDF) ya 🙏']
+        };
+
         const grouped = {};
         supplierMaterials.forEach(m => {
             if (!grouped[m.category]) grouped[m.category] = [];
             grouped[m.category].push(m);
         });
 
-        let msg = `🟦 ${project.projectNumber || project.quotationNumber || project.name || 'PROJECT'}\n`;
-        msg += 'Hi,\nNak order item ni ya:\n\n';
+        const projectRef = project.projectNumber || project.quotationNumber || project.name || 'PROJECT';
+        let msg = `${template.icon} *${projectRef}*\n`;
+        msg += `${template.intro}\n\n`;
 
         Object.entries(grouped).forEach(([cat, items]) => {
-            msg += `${cat}:\n`;
+            msg += `*${cat.toUpperCase()}:*\n`;
             items.forEach((item, i) => {
                 msg += `${i + 1}. ${item.item}`;
-                if (item.quantity !== '?') msg += ` - ${item.quantity} ${item.unit || ''}`;
+                if (item.quantity !== '?') msg += ` - *${item.quantity} ${item.unit || ''}*`;
                 msg += '\n';
             });
             msg += '\n';
         });
 
-        if (project.deliveryAddress) msg += `📍 Delivery: ${project.deliveryAddress}\n`;
-        if (project.needByDate) msg += `📅 Need by: ${project.needByDate}\n`;
+        if (project.deliveryAddress) msg += `📍 *Delivery:* ${project.deliveryAddress}\n`;
+        if (project.needByDate) msg += `📅 *Need by:* ${project.needByDate}\n`;
         if (project.contactPerson) {
-            msg += `👤 Contact: ${project.contactPerson}`;
+            msg += `👤 *Contact:* ${project.contactPerson}`;
             if (project.contactPhone) msg += ` (${project.contactPhone})`;
             msg += '\n';
         }
 
-        msg += '\nREQUEST:\n✅ Ada stock item?\n✅ Boleh hantar ke site?\n✅ Minta bil harga / Quotation (PDF) ya 🙏\nTerima kasih 👍🏻';
+        msg += '\n*REQUEST:*\n';
+        template.requests.forEach(req => {
+            msg += `✅ ${req}\n`;
+        });
+        msg += 'Terima kasih 👍🏻';
 
         return msg;
     };
@@ -478,11 +528,13 @@ const LogisticsSystem = () => {
             categories: supplierForm.categories.split(',').map(c => c.trim()).filter(Boolean),
             location: supplierForm.location.trim(),
             contact: supplierForm.contact.trim(),
-            whatsapp: supplierForm.whatsapp.trim()
+            whatsapp: supplierForm.whatsapp.trim(),
+            accountNumber: supplierForm.accountNumber.trim(),
+            bankName: supplierForm.bankName.trim()
         };
         setSuppliers(prev => [...prev, newSupplier]);
         setShowSupplierForm(false);
-        setSupplierForm({ name: '', categories: '', location: '', contact: '', whatsapp: '' });
+        setSupplierForm({ name: '', categories: '', location: '', contact: '', whatsapp: '', accountNumber: '', bankName: '' });
     };
 
     const deleteSupplier = (id) => {
@@ -605,6 +657,13 @@ const LogisticsSystem = () => {
                                 }`}
                         >
                             <List size={20} /> Items
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('monday')}
+                            className={`py-4 px-3 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'monday' ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'
+                                }`}
+                        >
+                            <ClipboardList size={20} /> Monday
                         </button>
                     </div>
                 </div>
@@ -1236,6 +1295,20 @@ const LogisticsSystem = () => {
                                     onChange={e => setSupplierForm({ ...supplierForm, whatsapp: e.target.value })}
                                     className="w-full border rounded-lg px-4 py-2.5"
                                 />
+                                <div className="grid grid-cols-2 gap-3">
+                                    <input
+                                        placeholder="Account Number"
+                                        value={supplierForm.accountNumber}
+                                        onChange={e => setSupplierForm({ ...supplierForm, accountNumber: e.target.value })}
+                                        className="w-full border rounded-lg px-4 py-2.5 font-mono"
+                                    />
+                                    <input
+                                        placeholder="Bank Name"
+                                        value={supplierForm.bankName}
+                                        onChange={e => setSupplierForm({ ...supplierForm, bankName: e.target.value })}
+                                        className="w-full border rounded-lg px-4 py-2.5"
+                                    />
+                                </div>
 
                                 <div className="flex justify-end gap-4 pt-4">
                                     <button
@@ -1366,6 +1439,10 @@ const LogisticsSystem = () => {
 
                 {activeTab === 'items' && (
                     <ItemDatabase catalog={itemCatalog} setCatalog={setItemCatalog} />
+                )}
+
+                {activeTab === 'monday' && (
+                    <MondayEntryGenerator projects={projects} suppliers={suppliers} />
                 )}
             </div>
         </div>

@@ -1,5 +1,3 @@
-5
-1555
 import React, { useState, useMemo } from 'react';
 import { Trash2, Edit2, Save, X, Plus, ChevronDown, ChevronRight, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';

@@ -385,9 +385,14 @@ export const standardCatalog = [
     "name": "M12x100 Wall Plug"
   },
   {
-    "price": 28,
+    "price": 24,
     "category": "hardware",
-    "name": "Gypsum board Standard 4x8ft x 9mm"
+    "name": "Gypsum board Standard 4x8ft x 9mm (AGP)"
+  },
+  {
+    "price": 32,
+    "category": "hardware",
+    "name": "Gypsum board Premium 4x8ft x 9mm (UAC/Elephant)"
   },
   {
     "price": 45,
@@ -395,14 +400,29 @@ export const standardCatalog = [
     "name": "Cement board 4x8ft x 9mm"
   },
   {
-    "price": 18.5,
+    "price": 23.5,
     "category": "hardware",
-    "name": "50KG Cement (PCC)"
+    "name": "50KG Cement (PCC) Ordinary Portland"
   },
   {
-    "price": 20,
+    "price": 24.5,
     "category": "hardware",
-    "name": "50KG Cement (PLC)"
+    "name": "50KG Cement (PLC) Premium"
+  },
+  {
+    "price": 38.0,
+    "category": "paint",
+    "name": "ICI Maxilite Emulsion Paint (7L) White"
+  },
+  {
+    "price": 105.0,
+    "category": "paint",
+    "name": "ICI Maxilite Emulsion Paint (18L) White"
+  },
+  {
+    "price": 85.0,
+    "category": "paint",
+    "name": "Jotun Jotaplast (18L) White"
   },
   {
     "price": 65,

@@ -396,6 +396,7 @@ const extractMetadata = (text) => {
         client: '',
         projectNumber: '',
         quotationNumber: '',
+        invoiceNumber: '',
         date: '',
         totalProject: ''
     };
@@ -403,6 +404,7 @@ const extractMetadata = (text) => {
     const lines = text.split('\n');
 
     lines.forEach(line => {
+        const lower = line.toLowerCase();
         // Project Name
         if (line.includes('PROJECT NAME')) {
             const match = line.match(/:\s*(.+?)(?:CLIENT|INDOOR|OUTDOOR|\(|$)/i);
@@ -416,19 +418,25 @@ const extractMetadata = (text) => {
         }
 
         // Project Number
-        if (line.match(/PROJECT\s*(?:NO|#|NUMBER)/i)) {
-            const match = line.match(/(?:NO|#|NUMBER)[:\s]*([A-Z0-9-/]+)/i);
+        if (lower.includes('project no') || lower.includes('project #') || lower.includes('project number')) {
+            const match = line.match(/(?:no|#|number)[:\s]*([A-Z0-9-/]+)/i);
             if (match) metadata.projectNumber = match[1];
         }
 
+        // Invoice Number
+        if (lower.includes('invoice no') || lower.includes('invoice #') || lower.includes('invoice number')) {
+            const match = line.match(/(?:no|#|number)[:\s]*([A-Z0-9-/]+)/i);
+            if (match) metadata.invoiceNumber = match[1];
+        }
+
         // Quotation Number
-        if (line.match(/QUOTATION\s*[:#NO]/i)) {
-            const match = line.match(/QUOTATION\s*[:#NO]*\s*[:]*\s*([A-Z0-9-]+)/i);
+        if (lower.includes('quotation no') || lower.includes('quotation #') || lower.includes('quotation number')) {
+            const match = line.match(/(?:no|#|number)[:\s]*([A-Z0-9-/]+)/i);
             if (match) metadata.quotationNumber = match[1];
         }
 
         // Date (multiple formats)
-        if (line.includes('DATE') || line.includes('QOUTATION DATE') || line.includes('QUOTATION DATE')) {
+        if (lower.includes('date') || lower.includes('qoutation date') || lower.includes('quotation date')) {
             const dateMatch = line.match(/(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})/);
             if (dateMatch) {
                 metadata.date = dateMatch[1];
@@ -439,8 +447,8 @@ const extractMetadata = (text) => {
         }
 
         // Total Project
-        if (line.includes('TOTAL PROJECT')) {
-            const match = line.match(/RM\s*([\d,]+\.?\d*)/);
+        if (lower.includes('total project') || lower.includes('grand total')) {
+            const match = line.match(/RM\s*([\d,]+\.?\d*)/i);
             if (match) metadata.totalProject = match[1].replace(/,/g, '');
         }
     });

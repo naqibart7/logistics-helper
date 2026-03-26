@@ -8,7 +8,9 @@ const SupplierCard = ({ supplier, onDelete, onUpdate }) => {
         categories: supplier.categories.join(', '),
         location: supplier.location,
         contact: supplier.contact,
-        whatsapp: supplier.whatsapp || ''
+        whatsapp: supplier.whatsapp || '',
+        accountNumber: supplier.accountNumber || '',
+        bankName: supplier.bankName || ''
     });
 
     const handleSave = () => {
@@ -18,7 +20,9 @@ const SupplierCard = ({ supplier, onDelete, onUpdate }) => {
             categories: editForm.categories.split(',').map(c => c.trim()).filter(Boolean),
             location: editForm.location.trim(),
             contact: editForm.contact.trim(),
-            whatsapp: editForm.whatsapp.trim()
+            whatsapp: editForm.whatsapp.trim(),
+            accountNumber: editForm.accountNumber.trim(),
+            bankName: editForm.bankName.trim()
         };
         onUpdate(updated);
         setIsEditing(false);
@@ -30,7 +34,9 @@ const SupplierCard = ({ supplier, onDelete, onUpdate }) => {
             categories: supplier.categories.join(', '),
             location: supplier.location,
             contact: supplier.contact,
-            whatsapp: supplier.whatsapp || ''
+            whatsapp: supplier.whatsapp || '',
+            accountNumber: supplier.accountNumber || '',
+            bankName: supplier.bankName || ''
         });
         setIsEditing(false);
     };
@@ -62,6 +68,20 @@ const SupplierCard = ({ supplier, onDelete, onUpdate }) => {
                             value={editForm.whatsapp}
                             onChange={e => setEditForm({ ...editForm, whatsapp: e.target.value })}
                             placeholder="WhatsApp Number"
+                            className="border rounded-lg px-3 py-2 text-sm"
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                        <input
+                            value={editForm.accountNumber}
+                            onChange={e => setEditForm({ ...editForm, accountNumber: e.target.value })}
+                            placeholder="Account Number"
+                            className="border rounded-lg px-3 py-2 text-sm font-mono"
+                        />
+                        <input
+                            value={editForm.bankName}
+                            onChange={e => setEditForm({ ...editForm, bankName: e.target.value })}
+                            placeholder="Bank Name"
                             className="border rounded-lg px-3 py-2 text-sm"
                         />
                     </div>
@@ -105,6 +125,11 @@ const SupplierCard = ({ supplier, onDelete, onUpdate }) => {
                     </p>
                     {supplier.whatsapp && (
                         <p className="text-sm text-gray-600 mt-1">💬 WA: {supplier.whatsapp}</p>
+                    )}
+                    {(supplier.accountNumber || supplier.bankName) && (
+                        <p className="text-sm text-gray-600 mt-1 font-mono">
+                            🏦 {supplier.accountNumber || '—'} {supplier.bankName ? `(${supplier.bankName})` : ''}
+                        </p>
                     )}
                     <div className="flex flex-wrap gap-2 mt-4">
                         {supplier.categories.map((cat, idx) => (
