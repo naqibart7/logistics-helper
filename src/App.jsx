@@ -195,7 +195,7 @@ const LogisticsSystem = () => {
                 // Default to Tabular PDF Extraction
                 const tabularData = await extractTabularData(file);
                 const text = tabularData.map(p =>
-                    p.table.map(row => row.join('    ')).join('\n')
+                    p.tables.map(tableGrid => tableGrid.map(row => row.join('    ')).join('\n')).join('\n\n--- NEXT TABLE ZONE ---\n\n')
                 ).join('\n--- PAGE BREAK ---\n');
 
                 result = smartParseTabular(tabularData, text);

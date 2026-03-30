@@ -130,9 +130,8 @@ const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
                 // 1. Extract true 2D grid coordinates
                 const tabularData = await extractTabularData(file);
 
-                // 2. Format grid back to raw text just for metadata extraction (headers, etc)
                 const text = tabularData.map(p =>
-                    p.table.map(row => row.join('    ')).join('\n')
+                    p.tables.map(tableGrid => tableGrid.map(row => row.join('    ')).join('\n')).join('\n\n--- NEXT TABLE ZONE ---\n\n')
                 ).join('\n--- PAGE BREAK ---\n');
 
                 // 3. Parse grid logic + metadata

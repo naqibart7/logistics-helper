@@ -181,38 +181,71 @@ export const extractTabularData = async (file) => {
                 }
             }
 
-            const pageTable = [];
+            // 3. Grid Zoning: Group columns into independent 2D tables if separated by >100px gap
+            const zones = [];
+            let currentZone = [];
 
-            // 3. Snap text items into the 2D grid
-            for (const line of lines) {
-                // Initialize empty row matching the detected columns
-                const rowArray = new Array(mergedCols.length).fill('');
+            for (let i = 0; i < mergedCols.length; i++) {
+                if (currentZone.length === 0) {
+                    currentZone.push(mergedCols[i]);
+                } else {
+                    const lastCol = currentZone[currentZone.length - 1];
+                    // If massive > 100px gap, it's a new table block (e.g. side-by-side tables)
+                    if (mergedCols[i].x - lastCol.x > 100) {
+                        zones.push([...currentZone]);
+                        currentZone = [mergedCols[i]];
+                    } else {
+                        currentZone.push(mergedCols[i]);
+                    }
+                }
+            }
+            if (currentZone.length > 0) zones.push(currentZone);
 
-                line.forEach(item => {
-                    let bestColIdx = 0;
-                    let minDiff = Infinity;
+            const pageTables = [];
 
-                    // Assign item to the closest column
-                    mergedCols.forEach((col, idx) => {
-                        const diff = Math.abs(col.x - item.x);
-                        if (diff < minDiff) {
-                            minDiff = diff;
-                            bestColIdx = idx;
+            // 4. Snap text items into their respective isolated 2D grids
+            zones.forEach(zoneCols => {
+                const zoneTable = [];
+
+                for (const line of lines) {
+                    // Initialize empty row matching the detected columns for this zone
+                    const rowArray = new Array(zoneCols.length).fill('');
+                    let placedAny = false;
+
+                    line.forEach(item => {
+                        let bestColIdx = -1;
+                        let minDiff = 60; // Max snap tolerance across column center
+
+                        // Assign item to the closest column INSIDE THIS ZONE
+                        zoneCols.forEach((col, idx) => {
+                            const diff = Math.abs(col.x - item.x);
+                            if (diff < minDiff) {
+                                minDiff = diff;
+                                bestColIdx = idx;
+                            }
+                        });
+
+                        if (bestColIdx !== -1) {
+                            // If multiple items fall into the same column slot, join them
+                            if (rowArray[bestColIdx] === '') {
+                                rowArray[bestColIdx] = item.str.trim();
+                            } else {
+                                rowArray[bestColIdx] += ' ' + item.str.trim();
+                            }
+                            placedAny = true;
                         }
                     });
 
-                    // If multiple items fall into the same column slot, join them
-                    if (rowArray[bestColIdx] === '') {
-                        rowArray[bestColIdx] = item.str.trim();
-                    } else {
-                        rowArray[bestColIdx] += ' ' + item.str.trim();
+                    // Only add the row if any data landed in this specific table zone
+                    if (placedAny) {
+                        zoneTable.push(rowArray);
                     }
-                });
+                }
 
-                pageTable.push(rowArray);
-            }
+                if (zoneTable.length > 0) pageTables.push(zoneTable);
+            });
 
-            tabularData.push({ pageNumber: page.pageNumber, table: pageTable });
+            tabularData.push({ pageNumber: page.pageNumber, tables: pageTables });
         }
 
         return tabularData;

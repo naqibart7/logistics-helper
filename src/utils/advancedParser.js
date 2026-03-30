@@ -595,79 +595,81 @@ export const smartParseTabular = (tabularData, rawText) => {
         let materials = [];
 
         for (const page of tabularData) {
-            let colMap = { item: -1, qty: -1, unitPrice: -1, total: -1 };
-            let hasHeaders = false;
-            let currentCategory = 'MATERIALS';
+            for (const tableGrid of page.tables) {
+                let colMap = { item: -1, qty: -1, unitPrice: -1, total: -1 };
+                let hasHeaders = false;
+                let currentCategory = 'MATERIALS';
 
-            for (const row of page.table) {
-                const textRow = row.join(' ').toLowerCase();
+                for (const row of tableGrid) {
+                    const textRow = row.join(' ').toLowerCase();
 
-                // 1. Detect Category Context (Single column rows)
-                if (row.filter(Boolean).length === 1 && !hasHeaders) {
-                    const onlyText = row.find(Boolean).toLowerCase();
-                    if (!onlyText.match(/\d/)) {
-                        currentCategory = row.find(Boolean).toUpperCase();
-                        continue;
+                    // 1. Detect Category Context (Single column rows)
+                    if (row.filter(Boolean).length === 1 && !hasHeaders) {
+                        const onlyText = row.find(Boolean).toLowerCase();
+                        if (!onlyText.match(/\d/)) {
+                            currentCategory = row.find(Boolean).toUpperCase();
+                            continue;
+                        }
                     }
-                }
 
-                // 2. Discover Headers Dynamically
-                if (!hasHeaders) {
-                    if (textRow.includes('qty') || textRow.includes('quantity') ||
-                        textRow.includes('amount') || textRow.includes('total')) {
+                    // 2. Discover Headers Dynamically
+                    if (!hasHeaders) {
+                        if (textRow.includes('qty') || textRow.includes('quantity') ||
+                            textRow.includes('amount') || textRow.includes('total')) {
 
-                        row.forEach((cell, idx) => {
-                            const c = cell.toLowerCase();
-                            if (c.includes('item') || c.includes('description') || c.includes('particulars')) colMap.item = idx;
-                            if (c === 'qty' || c.includes('quantity')) colMap.qty = idx;
-                            if (c.includes('unit price') || c.includes('rate') || c.includes('u/price') || c.includes('rm')) colMap.unitPrice = idx;
-                            if (c.includes('amount') || c.includes('total') || (c.includes('rm') && colMap.unitPrice !== idx)) colMap.total = idx;
-                        });
+                            row.forEach((cell, idx) => {
+                                const c = cell.toLowerCase();
+                                if (c.includes('item') || c.includes('description') || c.includes('particulars')) colMap.item = idx;
+                                if (c === 'qty' || c.includes('quantity')) colMap.qty = idx;
+                                if (c.includes('unit price') || c.includes('rate') || c.includes('u/price') || c.includes('rm')) colMap.unitPrice = idx;
+                                if (c.includes('amount') || c.includes('total') || (c.includes('rm') && colMap.unitPrice !== idx)) colMap.total = idx;
+                            });
 
-                        // Fallback item column
-                        if (colMap.item === -1) {
-                            for (let i = 0; i < (colMap.qty !== -1 ? colMap.qty : row.length); i++) {
-                                if (row[i].length > 2) colMap.item = i;
+                            // Fallback item column
+                            if (colMap.item === -1) {
+                                for (let i = 0; i < (colMap.qty !== -1 ? colMap.qty : row.length); i++) {
+                                    if (row[i].length > 2) colMap.item = i;
+                                }
                             }
-                        }
 
-                        if (colMap.item !== -1 && (colMap.qty !== -1 || colMap.total !== -1)) {
-                            hasHeaders = true;
+                            if (colMap.item !== -1 && (colMap.qty !== -1 || colMap.total !== -1)) {
+                                hasHeaders = true;
+                            }
+                            continue;
                         }
-                        continue;
                     }
-                }
 
-                // 3. Process Data Row using exact Grid Indices
-                if (hasHeaders) {
-                    const itemStr = colMap.item !== -1 ? row[colMap.item] : '';
-                    if (!itemStr || itemStr.trim().length === 0) continue;
+                    // 3. Process Data Row using exact Grid Indices
+                    if (hasHeaders) {
+                        const itemStr = colMap.item !== -1 ? row[colMap.item] : '';
+                        if (!itemStr || itemStr.trim().length === 0) continue;
 
-                    const qtyStr = colMap.qty !== -1 ? row[colMap.qty] : '';
-                    const totalStr = colMap.total !== -1 ? row[colMap.total] : '';
-                    const priceStr = colMap.unitPrice !== -1 ? row[colMap.unitPrice] : '';
+                        const qtyStr = colMap.qty !== -1 ? row[colMap.qty] : '';
+                        const totalStr = colMap.total !== -1 ? row[colMap.total] : '';
+                        const priceStr = colMap.unitPrice !== -1 ? row[colMap.unitPrice] : '';
 
-                    let total = cleanCurrency(totalStr);
-                    let qty = parseFloat(qtyStr.replace(/[^\d.-]/g, ''));
-                    let price = cleanCurrency(priceStr);
+                        let total = cleanCurrency(totalStr);
+                        let qty = parseFloat(qtyStr.replace(/[^\d.-]/g, ''));
+                        let price = cleanCurrency(priceStr);
 
-                    // Skip headers repeated, or sub-totals
-                    if (itemStr.toLowerCase().includes('total') || itemStr.toLowerCase().includes('carried forward') || total === 0) continue;
+                        // Skip headers repeated, or sub-totals
+                        if (itemStr.toLowerCase().includes('total') || itemStr.toLowerCase().includes('carried forward') || total === 0) continue;
 
-                    // Reconstruct missing numeric data logically
-                    if (isNaN(qty) || qty === 0) qty = (total > 0 && price > 0) ? (total / price) : 1;
-                    if (total > 0 && price === 0) price = total / qty;
+                        // Reconstruct missing numeric data logically
+                        if (isNaN(qty) || qty === 0) qty = (total > 0 && price > 0) ? (total / price) : 1;
+                        if (total > 0 && price === 0) price = total / qty;
 
-                    materials.push({
-                        id: generateId(),
-                        category: currentCategory,
-                        item: itemStr.replace(/^>/, '').trim(),
-                        quantity: qty,
-                        unit: 'pcs',
-                        unitPrice: price,
-                        price: total,
-                        total: total
-                    });
+                        materials.push({
+                            id: generateId(),
+                            category: currentCategory,
+                            item: itemStr.replace(/^>/, '').trim(),
+                            quantity: qty,
+                            unit: 'pcs',
+                            unitPrice: price,
+                            price: total,
+                            total: total
+                        });
+                    }
                 }
             }
         }
