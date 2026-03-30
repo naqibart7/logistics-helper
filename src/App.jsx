@@ -8,8 +8,8 @@ import { exportChecklistToPDF } from './utils/pdfChecklist';
 import { exportBOMToPDF } from './utils/pdfExport';
 import { parseExcelCostFile } from './utils/excelParser';
 import { parseDocument, formatCurrency } from './utils/pdfParser';
-import { smartParse } from './utils/advancedParser';
-import { convertPDFToText } from './utils/pdfExtractor';
+import { smartParse, smartParseTabular } from './utils/advancedParser';
+import { convertPDFToText, extractTabularData } from './utils/pdfExtractor';
 import FileUploader from './components/FileUploader';
 import ImportPreview from './components/ImportPreview';
 import Modal from './components/Modal';
@@ -192,9 +192,13 @@ const LogisticsSystem = () => {
                 // but we can generate a previewable summary
                 result.rawText = `Excel Import: ${file.name}\nSheets Processed: ${result.metadata.totalItems} items found.`;
             } else {
-                // Default to PDF/Text handling
-                const text = await convertPDFToText(file);
-                result = smartParse(text);
+                // Default to Tabular PDF Extraction
+                const tabularData = await extractTabularData(file);
+                const text = tabularData.map(p =>
+                    p.table.map(row => row.join('    ')).join('\n')
+                ).join('\n--- PAGE BREAK ---\n');
+
+                result = smartParseTabular(tabularData, text);
                 result.rawText = text;
             }
 

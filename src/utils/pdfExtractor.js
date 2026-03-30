@@ -136,3 +136,88 @@ export const convertPDFToText = async (file) => {
         throw error;
     }
 };
+
+/**
+ * Advanced Tabular Parser: The "Invisible Spreadsheet"
+ * Scans absolute X/Y coordinates to group words into a rigid 2D grid structure.
+ * This prevents empty columns (like missing QTY) from shifting data into the wrong index.
+ */
+export const extractTabularData = async (file) => {
+    try {
+        const pages = await extractTextWithLayout(file);
+        const tabularData = [];
+
+        for (const page of pages) {
+            const lines = groupItemsByLine(page.items);
+            let columnStarts = [];
+
+            // 1. Identify distinct vertical columns based on X-coordinates
+            page.items.forEach(item => {
+                // Find if there is a known column within 25px tolerance
+                const matchedCol = columnStarts.find(c => Math.abs(c.x - item.x) < 25);
+                if (matchedCol) {
+                    matchedCol.count++;
+                } else {
+                    columnStarts.push({ x: item.x, count: 1 });
+                }
+            });
+
+            // 2. Sort columns left-to-right and merge ones that are too close
+            columnStarts.sort((a, b) => a.x - b.x);
+
+            const mergedCols = [];
+            for (const col of columnStarts) {
+                if (mergedCols.length === 0) {
+                    mergedCols.push(col);
+                } else {
+                    const lastCol = mergedCols[mergedCols.length - 1];
+                    // If columns are closer than 30px, they are likely the same logical column slightly misaligned
+                    if (col.x - lastCol.x < 30) {
+                        lastCol.x = (lastCol.x * lastCol.count + col.x * col.count) / (lastCol.count + col.count); // weighted average
+                        lastCol.count += col.count;
+                    } else {
+                        mergedCols.push(col);
+                    }
+                }
+            }
+
+            const pageTable = [];
+
+            // 3. Snap text items into the 2D grid
+            for (const line of lines) {
+                // Initialize empty row matching the detected columns
+                const rowArray = new Array(mergedCols.length).fill('');
+
+                line.forEach(item => {
+                    let bestColIdx = 0;
+                    let minDiff = Infinity;
+
+                    // Assign item to the closest column
+                    mergedCols.forEach((col, idx) => {
+                        const diff = Math.abs(col.x - item.x);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            bestColIdx = idx;
+                        }
+                    });
+
+                    // If multiple items fall into the same column slot, join them
+                    if (rowArray[bestColIdx] === '') {
+                        rowArray[bestColIdx] = item.str.trim();
+                    } else {
+                        rowArray[bestColIdx] += ' ' + item.str.trim();
+                    }
+                });
+
+                pageTable.push(rowArray);
+            }
+
+            tabularData.push({ pageNumber: page.pageNumber, table: pageTable });
+        }
+
+        return tabularData;
+    } catch (error) {
+        console.error("Tabular Extraction Error:", error);
+        throw error;
+    }
+};

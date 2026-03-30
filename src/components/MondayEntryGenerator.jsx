@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Copy, CheckCircle, Calendar, ClipboardList, ChevronDown, FileUp, X, Sparkles, Loader2, Zap, Monitor, Info } from 'lucide-react';
-import { convertPDFToText } from '../utils/pdfExtractor';
-import { smartParse } from '../utils/advancedParser';
+import { extractTabularData } from '../utils/pdfExtractor';
+import { smartParseTabular } from '../utils/advancedParser';
 
 const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
     // Form state
@@ -127,8 +127,16 @@ const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
         if (file.type === 'application/pdf') {
             setIsParsing(true);
             try {
-                const text = await convertPDFToText(file);
-                const result = smartParse(text);
+                // 1. Extract true 2D grid coordinates
+                const tabularData = await extractTabularData(file);
+
+                // 2. Format grid back to raw text just for metadata extraction (headers, etc)
+                const text = tabularData.map(p =>
+                    p.table.map(row => row.join('    ')).join('\n')
+                ).join('\n--- PAGE BREAK ---\n');
+
+                // 3. Parse grid logic + metadata
+                const result = smartParseTabular(tabularData, text);
 
                 if (result && result.metadata) {
                     const meta = result.metadata;
@@ -142,7 +150,7 @@ const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
                     }));
                 }
             } catch (err) {
-                console.error("PDF Parsing failed:", err);
+                console.error("Tabular PDF Parsing failed:", err);
             } finally {
                 setIsParsing(false);
             }

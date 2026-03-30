@@ -581,6 +581,139 @@ export const smartParse = (text) => {
 };
 
 // ============================================================================
+// TABULAR PARSER (USES ADVANCED GRID EXTRACTION)
+// ============================================================================
+/**
+ * Smart parser for structured 2D Grids
+ * @param {Array} tabularData - 2D Array per page from pdfExtractor
+ * @param {string} rawText - Raw text for metadata extraction
+ */
+export const smartParseTabular = (tabularData, rawText) => {
+    try {
+        const metadata = extractMetadata(rawText);
+        const format = detectFormat(rawText);
+        let materials = [];
+
+        for (const page of tabularData) {
+            let colMap = { item: -1, qty: -1, unitPrice: -1, total: -1 };
+            let hasHeaders = false;
+            let currentCategory = 'MATERIALS';
+
+            for (const row of page.table) {
+                const textRow = row.join(' ').toLowerCase();
+
+                // 1. Detect Category Context (Single column rows)
+                if (row.filter(Boolean).length === 1 && !hasHeaders) {
+                    const onlyText = row.find(Boolean).toLowerCase();
+                    if (!onlyText.match(/\d/)) {
+                        currentCategory = row.find(Boolean).toUpperCase();
+                        continue;
+                    }
+                }
+
+                // 2. Discover Headers Dynamically
+                if (!hasHeaders) {
+                    if (textRow.includes('qty') || textRow.includes('quantity') ||
+                        textRow.includes('amount') || textRow.includes('total')) {
+
+                        row.forEach((cell, idx) => {
+                            const c = cell.toLowerCase();
+                            if (c.includes('item') || c.includes('description') || c.includes('particulars')) colMap.item = idx;
+                            if (c === 'qty' || c.includes('quantity')) colMap.qty = idx;
+                            if (c.includes('unit price') || c.includes('rate') || c.includes('u/price') || c.includes('rm')) colMap.unitPrice = idx;
+                            if (c.includes('amount') || c.includes('total') || (c.includes('rm') && colMap.unitPrice !== idx)) colMap.total = idx;
+                        });
+
+                        // Fallback item column
+                        if (colMap.item === -1) {
+                            for (let i = 0; i < (colMap.qty !== -1 ? colMap.qty : row.length); i++) {
+                                if (row[i].length > 2) colMap.item = i;
+                            }
+                        }
+
+                        if (colMap.item !== -1 && (colMap.qty !== -1 || colMap.total !== -1)) {
+                            hasHeaders = true;
+                        }
+                        continue;
+                    }
+                }
+
+                // 3. Process Data Row using exact Grid Indices
+                if (hasHeaders) {
+                    const itemStr = colMap.item !== -1 ? row[colMap.item] : '';
+                    if (!itemStr || itemStr.trim().length === 0) continue;
+
+                    const qtyStr = colMap.qty !== -1 ? row[colMap.qty] : '';
+                    const totalStr = colMap.total !== -1 ? row[colMap.total] : '';
+                    const priceStr = colMap.unitPrice !== -1 ? row[colMap.unitPrice] : '';
+
+                    let total = cleanCurrency(totalStr);
+                    let qty = parseFloat(qtyStr.replace(/[^\d.-]/g, ''));
+                    let price = cleanCurrency(priceStr);
+
+                    // Skip headers repeated, or sub-totals
+                    if (itemStr.toLowerCase().includes('total') || itemStr.toLowerCase().includes('carried forward') || total === 0) continue;
+
+                    // Reconstruct missing numeric data logically
+                    if (isNaN(qty) || qty === 0) qty = (total > 0 && price > 0) ? (total / price) : 1;
+                    if (total > 0 && price === 0) price = total / qty;
+
+                    materials.push({
+                        id: generateId(),
+                        category: currentCategory,
+                        item: itemStr.replace(/^>/, '').trim(),
+                        quantity: qty,
+                        unit: 'pcs',
+                        unitPrice: price,
+                        price: total,
+                        total: total
+                    });
+                }
+            }
+        }
+
+        // Fuzzy Match Catalog
+        if (materials.length > 0) {
+            const fuse = new Fuse(standardCatalog, { keys: ['name'], threshold: 0.4, includeScore: true });
+            materials.forEach(material => {
+                const results = fuse.search(material.item);
+                if (results.length > 0 && results[0].score < 0.4) {
+                    material.standardItem = results[0].item.name;
+                    material.standardPrice = results[0].item.price;
+                    material.standardCategory = results[0].item.category;
+                    material.matchScore = results[0].score;
+                }
+            });
+        }
+
+        const totalQuantity = materials.reduce((sum, m) => sum + (m.quantity || 0), 0);
+        const totalPrice = materials.reduce((sum, m) => sum + (m.total || 0), 0);
+        const categories = [...new Set(materials.map(m => m.category || 'MATERIALS'))];
+
+        const stats = {
+            totalItems: materials.length,
+            totalQuantity: totalQuantity,
+            totalPrice: totalPrice,
+            categories: categories.length,
+            categoryList: categories
+        };
+
+        if (!metadata.totalProject && materials.length > 0) metadata.totalProject = totalPrice.toFixed(2);
+
+        return {
+            format,
+            metadata: { ...metadata, ...stats },
+            materials,
+            success: materials.length > 0,
+            errors: materials.length === 0 ? ['No materials found (Tabular Parsing)'] : []
+        };
+    } catch (error) {
+        console.error('Tabular Parser error:', error);
+        return { format: 'ERROR', metadata: {}, materials: [], success: false, errors: [error.message] };
+    }
+};
+
+// ============================================================================
 // EXPORT MAIN FUNCTION
 // ============================================================================
 export default smartParse;
