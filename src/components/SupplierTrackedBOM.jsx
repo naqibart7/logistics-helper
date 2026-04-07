@@ -1,6 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle, Check } from 'lucide-react';
+import { Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle, Check, Zap } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
+import AutocompleteSupplierInput from './AutocompleteSupplierInput';
+import { CATEGORY_KEYWORDS } from '../data/initialData';
 
 const STATUS_STYLES = {
     'Not Ordered': { bg: 'bg-gray-100', text: 'text-gray-700', icon: Clock, border: 'border-gray-300' },
@@ -67,6 +69,33 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
         });
     };
 
+    // Quick-assign: find suppliers whose categories match a material's category
+    const getSuggestedSuppliers = (material) => {
+        if (!material.category) return [];
+        const matCat = material.category.toLowerCase();
+        return suppliers.filter(s =>
+            (s.categories || []).some(c => {
+                const cl = c.toLowerCase();
+                // Check direct match
+                if (cl.includes(matCat) || matCat.includes(cl)) return true;
+                // Check via CATEGORY_KEYWORDS
+                const keywords = CATEGORY_KEYWORDS[c] || [];
+                return keywords.some(kw => matCat.includes(kw) || kw.includes(matCat));
+            })
+        ).slice(0, 3);
+    };
+
+    // Bulk assign: assign all unassigned materials to a supplier
+    const bulkAssign = (supplier) => {
+        const unassigned = materials.filter(m => !m.assignedSupplier);
+        unassigned.forEach(m => {
+            const suggested = getSuggestedSuppliers(m);
+            if (suggested.some(s => s.id === supplier.id)) {
+                assignSupplier(m.id, supplier);
+            }
+        });
+    };
+
     const renderMaterialRow = (m) => {
         const isEditing = editingId === m.id;
         const status = m.orderStatus || 'Not Ordered';
@@ -88,14 +117,27 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                                 </div>
                             </div>
                         ) : (
-                            <div className="bg-white border border-dashed rounded-lg p-2 text-center">
-                                <div className="text-xs text-gray-400">No Supplier</div>
-                                {!isEditing && (
+                            <div className="bg-white border border-dashed rounded-lg p-2">
+                                <div className="text-[10px] text-gray-400 mb-1.5 text-center">Quick Assign</div>
+                                {getSuggestedSuppliers(m).length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                        {getSuggestedSuppliers(m).map(s => (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => assignSupplier(m.id, s)}
+                                                className="text-[10px] bg-blue-50 text-blue-700 hover:bg-blue-100 px-2 py-1 rounded-md transition-colors font-medium truncate max-w-[140px]"
+                                                title={`Assign to ${s.name}`}
+                                            >
+                                                {s.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
                                     <button
                                         onClick={() => startEdit(m)}
-                                        className="text-xs text-blue-600 hover:text-blue-700 mt-1"
+                                        className="text-xs text-blue-600 hover:text-blue-700 w-full text-center"
                                     >
-                                        Assign
+                                        Search & Assign
                                     </button>
                                 )}
                             </div>
@@ -200,21 +242,14 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                                 <label className="block text-xs font-medium text-gray-700 mb-1">
                                     Assign Supplier
                                 </label>
-                                <select
-                                    value={editForm.assignedSupplier?.id || ''}
-                                    onChange={e => {
-                                        const supplier = suppliers.find(s => s.id === e.target.value);
-                                        setEditForm({ ...editForm, assignedSupplier: supplier || null });
-                                    }}
-                                    className="w-full border rounded-lg px-3 py-2 text-sm"
-                                >
-                                    <option value="">No Supplier</option>
-                                    {suppliers.map(s => (
-                                        <option key={s.id} value={s.id}>
-                                            {s.name} - {s.location}
-                                        </option>
-                                    ))}
-                                </select>
+                                <AutocompleteSupplierInput
+                                    suppliers={suppliers}
+                                    value={editForm.assignedSupplier}
+                                    onSelect={(supplier) => setEditForm({ ...editForm, assignedSupplier: supplier })}
+                                    onClear={() => setEditForm({ ...editForm, assignedSupplier: null })}
+                                    materialCategory={m.category}
+                                    placeholder="Search supplier by name, location..."
+                                />
                             </div>
 
                             <div>
@@ -354,7 +389,7 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
             {/* Materials grouped by supplier */}
             {Object.keys(groupedBySupplier.assigned).length > 0 && (
                 <div className="space-y-6">
-                    {Object.values(groupedBySupplier.assigned).map(({ supplier, materials }) => (
+                    {Object.values(groupedBySupplier.assigned).map(({ supplier, materials: groupMaterials }) => (
                         <div key={supplier.id} className="space-y-3">
                             <div className="flex items-center gap-3 pb-2 border-b-2 border-blue-200">
                                 <Package size={20} className="text-blue-600" />
@@ -364,17 +399,28 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                                         {supplier.location} • {supplier.contact}
                                     </p>
                                 </div>
-                                <div className="ml-auto text-right">
-                                    <div className="text-sm text-gray-500">{materials.length} items</div>
-                                    {showPrices && (
-                                        <div className="font-semibold text-gray-900">
-                                            {formatCurrency(materials.reduce((sum, m) => sum + (m.price || 0), 0))}
-                                        </div>
+                                <div className="ml-auto flex items-center gap-3">
+                                    {groupedBySupplier.unassigned.length > 0 && (
+                                        <button
+                                            onClick={() => bulkAssign(supplier)}
+                                            className="text-[10px] bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1"
+                                            title={`Assign matching unassigned materials to ${supplier.name}`}
+                                        >
+                                            <Zap size={10} /> Bulk Assign
+                                        </button>
                                     )}
+                                    <div className="text-right">
+                                        <div className="text-sm text-gray-500">{groupMaterials.length} items</div>
+                                        {showPrices && (
+                                            <div className="font-semibold text-gray-900">
+                                                {formatCurrency(groupMaterials.reduce((sum, m) => sum + (m.price || 0), 0))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                             <div className="space-y-3">
-                                {materials.map(renderMaterialRow)}
+                                {groupMaterials.map(renderMaterialRow)}
                             </div>
                         </div>
                     ))}

@@ -149,12 +149,16 @@ export const extractTabularData = async (file) => {
 
         for (const page of pages) {
             const lines = groupItemsByLine(page.items);
-            let columnStarts = [];
 
-            // 1. Identify distinct vertical columns based on X-coordinates
-            page.items.forEach(item => {
-                // Find if there is a known column within 25px tolerance
-                const matchedCol = columnStarts.find(c => Math.abs(c.x - item.x) < 25);
+            // 1. Identify "Table Rows" (dense rows) to use for column calibration
+            // We ignore page headers/titles by only looking at rows with many items
+            const tableRows = lines.filter(line => line.length >= 4);
+            const calibrationItems = tableRows.length > 0 ? tableRows.flat() : page.items;
+
+            let columnStarts = [];
+            calibrationItems.forEach(item => {
+                // Find if there is a known column within 20px tolerance
+                const matchedCol = columnStarts.find(c => Math.abs(c.x - item.x) < 20);
                 if (matchedCol) {
                     matchedCol.count++;
                 } else {
@@ -171,8 +175,8 @@ export const extractTabularData = async (file) => {
                     mergedCols.push(col);
                 } else {
                     const lastCol = mergedCols[mergedCols.length - 1];
-                    // If columns are closer than 30px, they are likely the same logical column slightly misaligned
-                    if (col.x - lastCol.x < 30) {
+                    // If columns are closer than 25px, they are likely the same logical column slightly misaligned
+                    if (col.x - lastCol.x < 25) {
                         lastCol.x = (lastCol.x * lastCol.count + col.x * col.count) / (lastCol.count + col.count); // weighted average
                         lastCol.count += col.count;
                     } else {

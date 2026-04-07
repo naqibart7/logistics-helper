@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Copy, CheckCircle, Calendar, ClipboardList, ChevronDown, FileUp, X, Sparkles, Loader2, Zap, Monitor, Info } from 'lucide-react';
 import { extractTabularData } from '../utils/pdfExtractor';
 import { smartParseTabular } from '../utils/advancedParser';
+import AutocompleteSupplierInput from './AutocompleteSupplierInput';
 
 const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
     // Form state
@@ -404,16 +405,22 @@ const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
 
                         <div className="space-y-1">
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide ms-1">Company Account Name</label>
-                            <input
-                                value={form.companyAccountName}
-                                onChange={e => setForm({ ...form, companyAccountName: e.target.value })}
+                            <AutocompleteSupplierInput
+                                suppliers={suppliers}
+                                inputMode="text"
+                                textValue={form.companyAccountName}
+                                onTextChange={(val) => setForm({ ...form, companyAccountName: val })}
+                                onSelect={(supplier) => {
+                                    setForm(prev => ({
+                                        ...prev,
+                                        companyAccountName: supplier.name,
+                                        accountNumber: supplier.accountNumber || prev.accountNumber,
+                                        bankName: supplier.bankName || prev.bankName
+                                    }));
+                                    setMatchedSupplierId(supplier.id);
+                                }}
                                 placeholder="Type supplier name..."
-                                list="suplist"
-                                className="w-full bg-gray-50 border-0 focus:ring-2 focus:ring-blue-500 rounded-lg px-3 py-2.5 text-sm font-medium"
                             />
-                            <datalist id="suplist">
-                                {suppliers.map(s => <option key={s.id} value={s.name} />)}
-                            </datalist>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">

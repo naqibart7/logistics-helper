@@ -599,38 +599,49 @@ export const smartParseTabular = (tabularData, rawText) => {
                 let colMap = { item: -1, qty: -1, unitPrice: -1, total: -1 };
                 let hasHeaders = false;
                 let currentCategory = 'MATERIALS';
+                let pendingDescription = '';
 
                 for (const row of tableGrid) {
+                    const rowCells = row.filter(Boolean);
+                    if (rowCells.length === 0) continue;
+
                     const textRow = row.join(' ').toLowerCase();
 
-                    // 1. Detect Category Context (Single column rows)
-                    if (row.filter(Boolean).length === 1 && !hasHeaders) {
-                        const onlyText = row.find(Boolean).toLowerCase();
-                        if (!onlyText.match(/\d/)) {
-                            currentCategory = row.find(Boolean).toUpperCase();
+                    // 1. Skip obvious headers/summary lines globally
+                    if (textRow.includes('summary of tpc') ||
+                        textRow.includes('total product cost') ||
+                        textRow.includes('batch 1') ||
+                        textRow.includes('batch 2') ||
+                        textRow.includes('cogs') ||
+                        textRow.includes('total ( cogs )') ||
+                        textRow.includes('summary of') ||
+                        textRow.includes('total estimated value')) {
+                        hasHeaders = false; // Reset headers for summary section
+                        continue;
+                    }
+
+                    // 2. Detect Category Context (Single column rows)
+                    if (rowCells.length === 1 && !hasHeaders) {
+                        const onlyText = rowCells[0];
+                        // If it looks like a section header (e.g., "A MATERIAL", "WALL PANEL")
+                        if (onlyText.length > 3 && !onlyText.includes('RM') && !onlyText.match(/^\d+$/)) {
+                            currentCategory = onlyText.toUpperCase().replace(/^[A-Z]\s+/, '');
                             continue;
                         }
                     }
 
-                    // 2. Discover Headers Dynamically
+                    // 3. Discover Headers Dynamically
                     if (!hasHeaders) {
                         if (textRow.includes('qty') || textRow.includes('quantity') ||
                             textRow.includes('amount') || textRow.includes('total')) {
 
                             row.forEach((cell, idx) => {
                                 const c = cell.toLowerCase();
-                                if (c.includes('item') || c.includes('description') || c.includes('particulars')) colMap.item = idx;
+                                if (c.includes('item') || c.includes('description') || c.includes('particulars') || c.includes('material')) colMap.item = idx;
                                 if (c === 'qty' || c.includes('quantity')) colMap.qty = idx;
-                                if (c.includes('unit price') || c.includes('rate') || c.includes('u/price') || c.includes('rm')) colMap.unitPrice = idx;
-                                if (c.includes('amount') || c.includes('total') || (c.includes('rm') && colMap.unitPrice !== idx)) colMap.total = idx;
+                                if (c.includes('unit price') || c.includes('rate') || c.includes('u/price') || c.includes('price/unit')) colMap.unitPrice = idx;
+                                if (c.includes('total cost') || c.includes('total') || c.includes('amount')) colMap.total = idx;
                             });
-
-                            // Fallback item column
-                            if (colMap.item === -1) {
-                                for (let i = 0; i < (colMap.qty !== -1 ? colMap.qty : row.length); i++) {
-                                    if (row[i].length > 2) colMap.item = i;
-                                }
-                            }
 
                             if (colMap.item !== -1 && (colMap.qty !== -1 || colMap.total !== -1)) {
                                 hasHeaders = true;
@@ -639,36 +650,54 @@ export const smartParseTabular = (tabularData, rawText) => {
                         }
                     }
 
-                    // 3. Process Data Row using exact Grid Indices
+                    // 4. Process Data Row
                     if (hasHeaders) {
-                        const itemStr = colMap.item !== -1 ? row[colMap.item] : '';
-                        if (!itemStr || itemStr.trim().length === 0) continue;
-
+                        const itemStr = colMap.item !== -1 ? row[colMap.item].trim() : '';
                         const qtyStr = colMap.qty !== -1 ? row[colMap.qty] : '';
-                        const totalStr = colMap.total !== -1 ? row[colMap.total] : '';
                         const priceStr = colMap.unitPrice !== -1 ? row[colMap.unitPrice] : '';
+                        const totalStr = colMap.total !== -1 ? row[colMap.total] : '';
 
-                        let total = cleanCurrency(totalStr);
+                        const total = cleanCurrency(totalStr);
+                        const price = cleanCurrency(priceStr);
+
+                        // Handle "Termasuk" or non-numeric Qty
                         let qty = parseFloat(qtyStr.replace(/[^\d.-]/g, ''));
-                        let price = cleanCurrency(priceStr);
+                        if (isNaN(qty) && (qtyStr.includes('Termasuk') || textRow.includes('termasuk'))) {
+                            qty = 1; // It exists, just included
+                        }
 
-                        // Skip headers repeated, or sub-totals
-                        if (itemStr.toLowerCase().includes('total') || itemStr.toLowerCase().includes('carried forward') || total === 0) continue;
+                        // Skip repeated headers or purely empty rows
+                        if (textRow.includes('qty') || textRow.includes('total cost')) continue;
 
-                        // Reconstruct missing numeric data logically
-                        if (isNaN(qty) || qty === 0) qty = (total > 0 && price > 0) ? (total / price) : 1;
-                        if (total > 0 && price === 0) price = total / qty;
+                        // Skip summary category lines (e.g. "A MATERIAL" appearing in a row)
+                        if (itemStr.length < 2 || itemStr.match(/^[A-Z]\s+/) || itemStr.includes('TOTAL') || itemStr.includes('BATCH')) continue;
 
-                        materials.push({
-                            id: generateId(),
-                            category: currentCategory,
-                            item: itemStr.replace(/^>/, '').trim(),
-                            quantity: qty,
-                            unit: 'pcs',
-                            unitPrice: price,
-                            price: total,
-                            total: total
-                        });
+                        // MULTI-LINE SUPPORT: If row has item text but no numeric data, store description
+                        if (itemStr && isNaN(qty) && total === 0 && price === 0) {
+                            pendingDescription += (pendingDescription ? ' ' : '') + itemStr;
+                            continue;
+                        }
+
+                        // DATA DETECTED: We have numeric values, so create material
+                        if (total > 0 || qty > 0 || price > 0 || qtyStr.includes('Termasuk')) {
+                            let finalItemName = (pendingDescription ? pendingDescription + ' ' : '') + itemStr;
+                            finalItemName = finalItemName.replace(/^\d{1,3}\s+/, '').replace(/^→/, '').trim();
+                            pendingDescription = '';
+
+                            // Filter out garbage matches from summary section
+                            if (finalItemName.length > 3 && !finalItemName.match(/^[A-Z]\s+MATERIAL/)) {
+                                materials.push({
+                                    id: generateId(),
+                                    category: currentCategory,
+                                    item: finalItemName,
+                                    quantity: isNaN(qty) ? 1 : qty,
+                                    unit: 'pcs',
+                                    unitPrice: price || (qty > 0 ? total / qty : 0),
+                                    price: total,
+                                    total: total
+                                });
+                            }
+                        }
                     }
                 }
             }
