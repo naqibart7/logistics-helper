@@ -323,6 +323,32 @@ const LogisticsSystem = () => {
         }
     };
 
+    const bulkUpdateProjectMaterials = (projectId, updateList) => {
+        // updateList is an array of { id, updates }
+        setProjects(prev => prev.map(p => {
+            if (p.id === projectId) {
+                const updatedMaterials = p.materials.map(m => {
+                    const update = updateList.find(u => u.id === m.id);
+                    return update ? { ...m, ...update.updates } : m;
+                });
+                return { ...p, materials: updatedMaterials };
+            }
+            return p;
+        }));
+
+        if (selectedProject?.id === projectId) {
+            const updatedMaterials = selectedProject.materials.map(m => {
+                const update = updateList.find(u => u.id === m.id);
+                return update ? { ...m, ...update.updates } : m;
+            });
+            setSelectedProject({ ...selectedProject, materials: updatedMaterials });
+
+            if (isEditingProject && editedProject?.id === projectId) {
+                setEditedProject({ ...editedProject, materials: updatedMaterials });
+            }
+        }
+    };
+
     const removeProjectMaterial = (projectId, materialId) => {
         setProjects(prev => prev.map(p => {
             if (p.id === projectId) {
@@ -1130,6 +1156,7 @@ const LogisticsSystem = () => {
                                                 materials={selectedProject.materials}
                                                 suppliers={suppliers}
                                                 onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
+                                                onBulkUpdate={(updates) => bulkUpdateProjectMaterials(selectedProject.id, updates)}
                                                 showPrices={true}
                                             />
                                         ) : (

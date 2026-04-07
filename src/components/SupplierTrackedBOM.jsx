@@ -10,7 +10,7 @@ const STATUS_STYLES = {
     'Received': { bg: 'bg-green-100', text: 'text-green-700', icon: CheckCircle, border: 'border-green-300' }
 };
 
-const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => {
+const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, showPrices = true }) => {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
 
@@ -94,6 +94,52 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                 assignSupplier(m.id, supplier);
             }
         });
+    };
+
+    // Bulk mark as received: mark all items in a group as 'Received'
+    const bulkMarkReceived = (groupMaterials) => {
+        const notReceived = groupMaterials.filter(m => m.orderStatus !== 'Received');
+        if (notReceived.length === 0) return;
+        
+        if (!window.confirm(`Mark all ${notReceived.length} items as RECEIVED?`)) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const updates = notReceived.map(m => ({
+            id: m.id,
+            updates: { 
+                orderStatus: 'Received',
+                actualDelivery: today
+            }
+        }));
+
+        if (onBulkUpdate) {
+            onBulkUpdate(updates);
+        } else {
+            updates.forEach(u => onUpdate(u.id, u.updates));
+        }
+    };
+
+    // Bulk mark as ordered: mark all items in a group as 'Ordered'
+    const bulkMarkOrdered = (groupMaterials) => {
+        const notOrdered = groupMaterials.filter(m => m.orderStatus === 'Not Ordered');
+        if (notOrdered.length === 0) return;
+
+        if (!window.confirm(`Mark all ${notOrdered.length} items as ORDERED?`)) return;
+
+        const today = new Date().toISOString().split('T')[0];
+        const updates = notOrdered.map(m => ({
+            id: m.id,
+            updates: { 
+                orderStatus: 'Ordered',
+                orderDate: today
+            }
+        }));
+
+        if (onBulkUpdate) {
+            onBulkUpdate(updates);
+        } else {
+            updates.forEach(u => onUpdate(u.id, u.updates));
+        }
     };
 
     const renderMaterialRow = (m) => {
@@ -188,28 +234,69 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                             )}
                         </div>
 
-                        {/* Status Badge */}
-                        <div className="mt-3 flex items-center gap-3">
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${statusStyle.bg} ${statusStyle.text} border ${statusStyle.border}`}>
+                        {/* Status & Quick Actions */}
+                        <div className="mt-4 flex items-center flex-wrap gap-3">
+                            {/* Current Status Badge */}
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border-2 ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} shadow-sm`}>
                                 <StatusIcon size={14} />
-                                {status}
+                                {status.toUpperCase()}
                             </span>
 
-                            {m.orderDate && (
-                                <span className="text-xs text-gray-600">
-                                    Ordered: {new Date(m.orderDate).toLocaleDateString()}
-                                </span>
-                            )}
-                            {m.expectedDelivery && (
-                                <span className="text-xs text-gray-600">
-                                    Expected: {new Date(m.expectedDelivery).toLocaleDateString()}
-                                </span>
-                            )}
-                            {m.actualDelivery && (
-                                <span className="text-xs text-green-700 font-medium">
-                                    Delivered: {new Date(m.actualDelivery).toLocaleDateString()}
-                                </span>
-                            )}
+                            {/* Quick Action Toggles */}
+                            <div className="flex items-center gap-1.5 bg-gray-50 border p-1 rounded-lg">
+                                {status === 'Not Ordered' && (
+                                    <button
+                                        onClick={() => onUpdate(m.id, { 
+                                            orderStatus: 'Ordered',
+                                            orderDate: new Date().toISOString().split('T')[0]
+                                        })}
+                                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-blue-600 text-white rounded hover:bg-blue-700 transition-all active:scale-95"
+                                        title="Quick mark as Ordered"
+                                    >
+                                        <Package size={12} /> Mark Ordered
+                                    </button>
+                                )}
+                                
+                                {status !== 'Received' && (
+                                    <button
+                                        onClick={() => onUpdate(m.id, { 
+                                            orderStatus: 'Received',
+                                            actualDelivery: new Date().toISOString().split('T')[0]
+                                        })}
+                                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-green-600 text-white rounded hover:bg-green-700 transition-all active:scale-95"
+                                        title="Quick mark as Received"
+                                    >
+                                        <CheckCircle size={12} /> Mark Received
+                                    </button>
+                                )}
+
+                                {status === 'Received' && (
+                                    <button
+                                        onClick={() => onUpdate(m.id, { 
+                                            orderStatus: 'Not Ordered',
+                                            actualDelivery: null
+                                        })}
+                                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-white text-gray-500 border border-gray-200 rounded hover:bg-gray-50 transition-all"
+                                        title="Reset status"
+                                    >
+                                        <Clock size={12} /> Reset
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Date Overlays */}
+                            <div className="flex items-center gap-3">
+                                {m.orderDate && (
+                                    <span className="text-[10px] text-gray-500 font-medium">
+                                        📅 {new Date(m.orderDate).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                                    </span>
+                                )}
+                                {m.actualDelivery && (
+                                    <span className="text-[10px] text-green-600 font-bold bg-green-50 px-1.5 py-0.5 rounded">
+                                        📦 {new Date(m.actualDelivery).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                                    </span>
+                                )}
+                            </div>
                         </div>
 
                         {/* Notes */}
@@ -400,15 +487,38 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, showPrices = true 
                                     </p>
                                 </div>
                                 <div className="ml-auto flex items-center gap-3">
-                                    {groupedBySupplier.unassigned.length > 0 && (
-                                        <button
-                                            onClick={() => bulkAssign(supplier)}
-                                            className="text-[10px] bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1"
-                                            title={`Assign matching unassigned materials to ${supplier.name}`}
-                                        >
-                                            <Zap size={10} /> Bulk Assign
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        {groupedBySupplier.unassigned.length > 0 && (
+                                            <button
+                                                onClick={() => bulkAssign(supplier)}
+                                                className="text-[10px] bg-blue-50 text-blue-600 hover:bg-blue-100 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1"
+                                                title={`Assign matching unassigned materials to ${supplier.name}`}
+                                            >
+                                                <Zap size={10} /> Bulk Assign
+                                            </button>
+                                        )}
+                                        
+                                        {groupMaterials.some(m => !m.orderStatus || m.orderStatus === 'Not Ordered') && (
+                                            <button
+                                                onClick={() => bulkMarkOrdered(groupMaterials)}
+                                                className="text-[10px] bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1"
+                                                title={`Mark all un-ordered items from ${supplier.name} as Ordered`}
+                                            >
+                                                <Package size={10} /> Mark Group Ordered
+                                            </button>
+                                        )}
+
+                                        {groupMaterials.some(m => m.orderStatus !== 'Received') && (
+                                            <button
+                                                onClick={() => bulkMarkReceived(groupMaterials)}
+                                                className="text-[10px] bg-green-50 text-green-600 hover:bg-green-100 px-2.5 py-1.5 rounded-lg transition-colors font-bold flex items-center gap-1"
+                                                title={`Mark all items from ${supplier.name} as Received`}
+                                            >
+                                                <CheckCircle size={10} /> Mark Group Received
+                                            </button>
+                                        )}
+                                    </div>
+
                                     <div className="text-right">
                                         <div className="text-sm text-gray-500">{groupMaterials.length} items</div>
                                         {showPrices && (
