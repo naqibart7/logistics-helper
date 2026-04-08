@@ -30,6 +30,7 @@ import { AutocompleteItemInput } from './components/AutocompleteItemInput';
 import { standardCatalog } from './data/standardCatalog';
 import SuggestedSuppliers from './components/SuggestedSuppliers';
 import { List, ClipboardList } from 'lucide-react';
+import PublicDashboard from './components/PublicDashboard';
 
 const generateSafeId = () => {
     return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -520,8 +521,8 @@ const LogisticsSystem = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <div className="bg-blue-700 text-white p-6 shadow flex justify-between items-center">
+        <div className={`min-h-screen ${!user ? 'bg-[#0a0a0f]' : 'bg-gray-50'}`}>
+            <div className={`${!user ? 'bg-[#0a0a0f] border-b border-white/10' : 'bg-blue-700'} text-white p-6 shadow flex justify-between items-center relative z-50`}>
                 <div>
                     <h1 className="text-3xl font-bold">Artseven Special Force Logistic</h1>
                     <p className="text-blue-100 mt-1 flex items-center gap-2 text-sm">
@@ -554,9 +555,13 @@ const LogisticsSystem = () => {
                 </div>
             </div>
 
-            <div className="bg-white border-b shadow-sm">
-                <div className="max-w-7xl mx-auto px-6">
-                    <div className="flex space-x-10">
+            {!user ? (
+                <PublicDashboard projects={projects} onSignInRequest={() => setShowAuth(true)} />
+            ) : (
+                <>
+                    <div className="bg-white border-b shadow-sm">
+                        <div className="max-w-7xl mx-auto px-6">
+                            <div className="flex space-x-10">
                         <button
                             onClick={() => setActiveTab('projects')}
                             className={`py-4 px-3 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'projects' ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'
@@ -1324,6 +1329,8 @@ const LogisticsSystem = () => {
                     />
                 )}
             </div>
+                </>
+            )}
         </div>
     );
 };
