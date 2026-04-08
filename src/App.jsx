@@ -28,6 +28,7 @@ import ItemDatabase from './components/ItemDatabase';
 import MondayEntryGenerator from './components/MondayEntryGenerator';
 import { AutocompleteItemInput } from './components/AutocompleteItemInput';
 import { standardCatalog } from './data/standardCatalog';
+import SuggestedSuppliers from './components/SuggestedSuppliers';
 import { List, ClipboardList } from 'lucide-react';
 
 const generateSafeId = () => {
@@ -436,113 +437,6 @@ const LogisticsSystem = () => {
         setEditedProject(null);
     };
 
-    const getSuggestedSuppliers = (materials) => {
-        const matches = {};
-        materials.forEach(m => {
-            const text = (m.item + ' ' + m.category).toLowerCase();
-            suppliers.forEach(sup => {
-                sup.categories.forEach(cat => {
-                    const keywords = CATEGORY_KEYWORDS[cat] || [cat.toLowerCase()];
-                    if (keywords.some(k => text.includes(k))) {
-                        if (!matches[sup.id]) matches[sup.id] = { supplier: sup, matches: [] };
-                        matches[sup.id].matches.push(m.item);
-                    }
-                });
-            });
-        });
-        return Object.values(matches).sort((a, b) => b.matches.length - a.matches.length);
-    };
-
-    const generateWhatsAppMessage = (project, supplier) => {
-        const supplierMaterials = project.materials.filter(m => {
-            const text = (m.item + ' ' + m.category).toLowerCase();
-            return supplier.categories.some(cat => {
-                const keywords = CATEGORY_KEYWORDS[cat] || [cat.toLowerCase()];
-                return keywords.some(k => text.includes(k));
-            });
-        });
-
-        if (supplierMaterials.length === 0) return '';
-
-        // Determine the primary template based on supplier categories
-        const WHATSAPP_TEMPLATES = {
-            'Gypsum Board': {
-                icon: '🏗️',
-                intro: 'Hi, nak tanya stok & order barang partition/gypsum ni ya:',
-                requests: ['Ada stock board & metal stud?', 'Boleh hantar lori hantu/site?', 'Minta Best Price/Quotation ya 🙏']
-            },
-            'Paint': {
-                icon: '🎨',
-                intro: 'Hi, nak order cat/paint items ni ya:',
-                requests: ['Ada stock code ni?', 'Boleh mix/bancuh harini?', 'Minta Quotation/Invoice ya 🙏']
-            },
-            'Lighting': {
-                icon: '💡',
-                intro: 'Hi, nak tanya quotation untuk lighting items ni:',
-                requests: ['Ada stock item ni?', 'Item ni ada warranty?', 'Minta Quo/Best Price ya 🙏']
-            },
-            'PVC Panel': {
-                icon: '🪵',
-                intro: 'Hi, nak order PVC/Fluted panel ni ya:',
-                requests: ['Ada stock code & warna ni?', 'Boleh hantar ke site?', 'Minta Quotation ya 🙏']
-            },
-            'Hardware Tools': {
-                icon: '🛠️',
-                intro: 'Hi, nak order hardware items ni ya:',
-                requests: ['Ada stock item ni?', 'Boleh hantar urgent/grab?', 'Minta Quotation/Invoice ya 🙏']
-            },
-            'Electrical': {
-                icon: '🔌',
-                intro: 'Hi, nak tanya quotation untuk barang elektrik ni:',
-                requests: ['Ada stock item ni?', 'Item ni SIRIM approve?', 'Minta Quotation ya 🙏']
-            }
-        };
-
-        // Find best matching template
-        const matchedCat = supplier.categories.find(c => WHATSAPP_TEMPLATES[c]) || 'Hardware Tools';
-        const template = WHATSAPP_TEMPLATES[matchedCat] || {
-            icon: '🟦',
-            intro: 'Hi,\nNak order item ni ya:',
-            requests: ['Ada stock item?', 'Boleh hantar ke site?', 'Minta bil harga / Quotation (PDF) ya 🙏']
-        };
-
-        const grouped = {};
-        supplierMaterials.forEach(m => {
-            if (!grouped[m.category]) grouped[m.category] = [];
-            grouped[m.category].push(m);
-        });
-
-        const projectRef = project.projectNumber || project.quotationNumber || project.name || 'PROJECT';
-        let msg = `${template.icon} *${projectRef}*\n`;
-        msg += `${template.intro}\n\n`;
-
-        Object.entries(grouped).forEach(([cat, items]) => {
-            msg += `*${cat.toUpperCase()}:*\n`;
-            items.forEach((item, i) => {
-                msg += `${i + 1}. ${item.item}`;
-                if (item.quantity !== '?') msg += ` - *${item.quantity} ${item.unit || ''}*`;
-                msg += '\n';
-            });
-            msg += '\n';
-        });
-
-        if (project.deliveryAddress) msg += `📍 *Delivery:* ${project.deliveryAddress}\n`;
-        if (project.needByDate) msg += `📅 *Need by:* ${project.needByDate}\n`;
-        if (project.contactPerson) {
-            msg += `👤 *Contact:* ${project.contactPerson}`;
-            if (project.contactPhone) msg += ` (${project.contactPhone})`;
-            msg += '\n';
-        }
-
-        msg += '\n*REQUEST:*\n';
-        template.requests.forEach(req => {
-            msg += `✅ ${req}\n`;
-        });
-        msg += 'Terima kasih 👍🏻';
-
-        return msg;
-    };
-
     const copyToClipboard = (text) => {
         navigator.clipboard.writeText(text).then(() => {
             setCopiedMessage(true);
@@ -624,10 +518,6 @@ const LogisticsSystem = () => {
             s.id === updatedSupplier.id ? updatedSupplier : s
         ));
     };
-
-    const suggestedSuppliers = useMemo(() => {
-        return selectedProject ? getSuggestedSuppliers(selectedProject.materials) : [];
-    }, [selectedProject, suppliers]);
 
     return (
         <div className="min-h-screen bg-gray-50">
@@ -1150,6 +1040,7 @@ const LogisticsSystem = () => {
                                                 suppliers={suppliers}
                                                 onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
                                                 showPrices={true}
+                                                projectName={selectedProject.name}
                                             />
                                         ) : ['Quotes Received', 'Orders Placed', 'Completed'].includes(selectedProject.status) ? (
                                             <SupplierTrackedBOM
@@ -1171,55 +1062,8 @@ const LogisticsSystem = () => {
                                         )}
                                     </div>
 
-                                    <div>
-                                        <h4 className="font-semibold text-lg mb-4">Suggested Suppliers & Messages</h4>
-                                        {suggestedSuppliers.length > 0 ? (
-                                            <div className="space-y-4">
-                                                {suggestedSuppliers.map(({ supplier, matches }) => (
-                                                    <div key={supplier.id} className="border rounded-xl p-5 hover:shadow-md transition-shadow">
-                                                        <div className="flex justify-between items-start gap-4">
-                                                            <div className="flex-1">
-                                                                <h5 className="font-bold text-lg">{supplier.name}</h5>
-                                                                <p className="text-sm text-gray-600 mt-1">
-                                                                    {supplier.location} • {supplier.contact}
-                                                                    {supplier.whatsapp && ` • WA: ${supplier.whatsapp}`}
-                                                                </p>
-                                                                <div className="flex flex-wrap gap-2 mt-3">
-                                                                    {supplier.categories.map((cat, idx) => (
-                                                                        <span key={idx} className="px-3 py-1 bg-blue-50 text-blue-700 text-xs rounded-full">
-                                                                            {cat}
-                                                                        </span>
-                                                                    ))}
-                                                                </div>
-                                                                <p className="text-xs text-gray-500 mt-3">
-                                                                    Matches: {matches.slice(0, 6).join(', ')}
-                                                                    {matches.length > 6 && ` +${matches.length - 6} more`}
-                                                                </p>
-                                                            </div>
-
-                                                            <button
-                                                                onClick={() => copyToClipboard(generateWhatsAppMessage(selectedProject, supplier))}
-                                                                className="bg-green-600 text-white px-5 py-2.5 rounded-lg hover:bg-green-700 flex items-center gap-2 whitespace-nowrap"
-                                                            >
-                                                                {copiedMessage ? (
-                                                                    <>
-                                                                        <CheckCircle size={18} /> Copied!
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <Copy size={18} /> Copy WA Message
-                                                                    </>
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <p className="text-gray-500 text-center py-8">
-                                                No matching suppliers found for the current materials.
-                                            </p>
-                                        )}
+                                    <div className="mb-6">
+                                        <SuggestedSuppliers project={selectedProject} suppliers={suppliers} />
                                     </div>
 
                                     <div className="pt-8 border-t flex justify-end">

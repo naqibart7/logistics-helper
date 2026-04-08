@@ -7,7 +7,8 @@ import { CATEGORY_KEYWORDS } from '../data/initialData';
 const STATUS_STYLES = {
     'Not Ordered': { bg: 'bg-gray-100', text: 'text-gray-700', icon: Clock, border: 'border-gray-300' },
     'Ordered': { bg: 'bg-blue-100', text: 'text-blue-700', icon: Package, border: 'border-blue-300' },
-    'Received': { bg: 'bg-green-100', text: 'text-green-700', icon: CheckCircle, border: 'border-green-300' }
+    'Received': { bg: 'bg-green-100', text: 'text-green-700', icon: CheckCircle, border: 'border-green-300' },
+    'N/A': { bg: 'bg-orange-50', text: 'text-orange-700', icon: X, border: 'border-orange-200' }
 };
 
 const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, showPrices = true }) => {
@@ -98,13 +99,14 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
 
     // Bulk mark as received: mark all items in a group as 'Received'
     const bulkMarkReceived = (groupMaterials) => {
-        const notReceived = groupMaterials.filter(m => m.orderStatus !== 'Received');
-        if (notReceived.length === 0) return;
+        // Find everything NOT already received and NOT N/A
+        const targetItems = groupMaterials.filter(m => m.orderStatus !== 'Received' && m.orderStatus !== 'N/A');
+        if (targetItems.length === 0) return;
         
-        if (!window.confirm(`Mark all ${notReceived.length} items as RECEIVED?`)) return;
+        if (!window.confirm(`Mark all ${targetItems.length} items from this supplier as RECEIVED?`)) return;
 
         const today = new Date().toISOString().split('T')[0];
-        const updates = notReceived.map(m => ({
+        const updates = targetItems.map(m => ({
             id: m.id,
             updates: { 
                 orderStatus: 'Received',
@@ -121,13 +123,14 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
 
     // Bulk mark as ordered: mark all items in a group as 'Ordered'
     const bulkMarkOrdered = (groupMaterials) => {
-        const notOrdered = groupMaterials.filter(m => m.orderStatus === 'Not Ordered');
-        if (notOrdered.length === 0) return;
+        // Find everything that is 'Not Ordered' OR has no status yet
+        const targetItems = groupMaterials.filter(m => !m.orderStatus || m.orderStatus === 'Not Ordered');
+        if (targetItems.length === 0) return;
 
-        if (!window.confirm(`Mark all ${notOrdered.length} items as ORDERED?`)) return;
+        if (!window.confirm(`Mark all ${targetItems.length} items from this supplier as ORDERED?`)) return;
 
         const today = new Date().toISOString().split('T')[0];
-        const updates = notOrdered.map(m => ({
+        const updates = targetItems.map(m => ({
             id: m.id,
             updates: { 
                 orderStatus: 'Ordered',
@@ -282,6 +285,18 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
                                         <Clock size={12} /> Reset
                                     </button>
                                 )}
+
+                                {status !== 'N/A' && (
+                                    <button
+                                        onClick={() => onUpdate(m.id, { 
+                                            orderStatus: 'N/A'
+                                        })}
+                                        className="flex items-center gap-1 px-2 py-1 text-[10px] font-bold bg-white text-orange-600 border border-orange-100 rounded hover:bg-orange-50 transition-all font-mono"
+                                        title="Mark as Not Applicable"
+                                    >
+                                        <X size={12} /> N/A
+                                    </button>
+                                )}
                             </div>
 
                             {/* Date Overlays */}
@@ -344,13 +359,14 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
                                     Order Status
                                 </label>
                                 <select
-                                    value={editForm.orderStatus}
+                                    value={editForm.orderStatus || 'Not Ordered'}
                                     onChange={e => setEditForm({ ...editForm, orderStatus: e.target.value })}
                                     className="w-full border rounded-lg px-3 py-2 text-sm"
                                 >
                                     <option value="Not Ordered">Not Ordered</option>
                                     <option value="Ordered">Ordered</option>
                                     <option value="Received">Received</option>
+                                    <option value="N/A">Not Applicable (N/A)</option>
                                 </select>
                             </div>
 
@@ -429,7 +445,8 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
         const summary = {
             'Not Ordered': { count: 0, total: 0 },
             'Ordered': { count: 0, total: 0 },
-            'Received': { count: 0, total: 0 }
+            'Received': { count: 0, total: 0 },
+            'N/A': { count: 0, total: 0 }
         };
 
         materials.forEach(m => {
@@ -452,7 +469,7 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
     return (
         <div className="space-y-6">
             {/* Status Summary */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {Object.entries(statusSummary).map(([status, data]) => {
                     const style = STATUS_STYLES[status];
                     const Icon = style.icon;

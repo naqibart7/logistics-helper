@@ -1,8 +1,13 @@
-import React, { useMemo } from 'react';
-import { Package, CheckCircle, Circle, AlertCircle, Check } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Package, CheckCircle, Circle, AlertCircle, Check, Copy, ChevronDown, ChevronUp, ClipboardCheck } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 
-const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => {
+const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true, projectName = '' }) => {
+    const [showPendingPanel, setShowPendingPanel] = useState(true);
+    const [selectedForCopy, setSelectedForCopy] = useState(new Set());
+    const [copyMode, setCopyMode] = useState('pending'); // 'pending' | 'verified' | 'all'
+    const [copied, setCopied] = useState(false);
+
     // Group materials by supplier
     const groupedBySupplier = useMemo(() => {
         const groups = {
@@ -36,6 +41,155 @@ const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => 
 
         return { total, checked, unchecked: total - checked, percentage };
     }, [materials]);
+
+    // Pending (not verified) items grouped by supplier
+    const pendingItemsGrouped = useMemo(() => {
+        const pending = materials.filter(m => !m.deliveryChecked);
+        const groups = {};
+
+        pending.forEach(m => {
+            const key = m.assignedSupplier ? m.assignedSupplier.name : 'Unassigned';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(m);
+        });
+
+        return groups;
+    }, [materials]);
+
+    // Verified items grouped by supplier
+    const verifiedItemsGrouped = useMemo(() => {
+        const verified = materials.filter(m => m.deliveryChecked);
+        const groups = {};
+
+        verified.forEach(m => {
+            const key = m.assignedSupplier ? m.assignedSupplier.name : 'Unassigned';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(m);
+        });
+
+        return groups;
+    }, [materials]);
+
+    // Current items based on copy mode
+    const currentItemsGrouped = useMemo(() => {
+        if (copyMode === 'pending') return pendingItemsGrouped;
+        if (copyMode === 'verified') return verifiedItemsGrouped;
+        // 'all'
+        const groups = {};
+        materials.forEach(m => {
+            const key = m.assignedSupplier ? m.assignedSupplier.name : 'Unassigned';
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(m);
+        });
+        return groups;
+    }, [copyMode, pendingItemsGrouped, verifiedItemsGrouped, materials]);
+
+    const currentItemsFlat = useMemo(() => {
+        return Object.values(currentItemsGrouped).flat();
+    }, [currentItemsGrouped]);
+
+    // Auto-select all items when mode changes
+    const switchMode = useCallback((mode) => {
+        setCopyMode(mode);
+        const items = mode === 'pending'
+            ? materials.filter(m => !m.deliveryChecked)
+            : mode === 'verified'
+                ? materials.filter(m => m.deliveryChecked)
+                : materials;
+        setSelectedForCopy(new Set(items.map(m => m.id)));
+    }, [materials]);
+
+    // Initialize selection on mount & when pending items change
+    React.useEffect(() => {
+        const pendingIds = materials.filter(m => !m.deliveryChecked).map(m => m.id);
+        setSelectedForCopy(new Set(pendingIds));
+    }, [materials]);
+
+    const toggleSelectItem = (id) => {
+        setSelectedForCopy(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        const allIds = currentItemsFlat.map(m => m.id);
+        const allSelected = allIds.every(id => selectedForCopy.has(id));
+        if (allSelected) {
+            setSelectedForCopy(new Set());
+        } else {
+            setSelectedForCopy(new Set(allIds));
+        }
+    };
+
+    const toggleSelectGroup = (groupItems) => {
+        const groupIds = groupItems.map(m => m.id);
+        const allSelected = groupIds.every(id => selectedForCopy.has(id));
+        setSelectedForCopy(prev => {
+            const next = new Set(prev);
+            groupIds.forEach(id => {
+                if (allSelected) next.delete(id);
+                else next.add(id);
+            });
+            return next;
+        });
+    };
+
+    // Generate WhatsApp-formatted message for selected items
+    const generateWhatsAppMessage = useCallback(() => {
+        const selected = materials.filter(m => selectedForCopy.has(m.id));
+        if (selected.length === 0) return '';
+
+        const modeLabel = copyMode === 'pending' ? 'Pending Delivery' : copyMode === 'verified' ? 'On Site ✅' : 'Item List';
+        const today = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+
+        let msg = `📋 *${modeLabel}*\n`;
+        msg += `📅 ${today}\n`;
+        if (projectName) msg += `🏗️ *${projectName}*\n`;
+        msg += `\n`;
+
+        // Group selected items by supplier
+        const grouped = {};
+        selected.forEach(m => {
+            const key = m.assignedSupplier ? m.assignedSupplier.name : 'Others';
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(m);
+        });
+
+        let counter = 1;
+        Object.entries(grouped).forEach(([supplier, items]) => {
+            if (Object.keys(grouped).length > 1 || supplier !== 'Others') {
+                msg += `*${supplier}:*\n`;
+            }
+            items.forEach(item => {
+                msg += `${counter}. ${item.item}`;
+                if (item.quantity && item.quantity !== '?') {
+                    msg += ` — ${item.quantity} ${item.unit || ''}`.trimEnd();
+                }
+                if (copyMode === 'verified' && item.checkedDate) {
+                    msg += ` ✅`;
+                }
+                msg += '\n';
+                counter++;
+            });
+            msg += '\n';
+        });
+
+        msg += `Total: ${selected.length} item(s)`;
+
+        return msg;
+    }, [selectedForCopy, materials, copyMode, projectName]);
+
+    const copyToClipboard = () => {
+        const msg = generateWhatsAppMessage();
+        if (!msg) return;
+        navigator.clipboard.writeText(msg).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    };
 
     const toggleCheck = (materialId) => {
         const material = materials.find(m => m.id === materialId);
@@ -195,6 +349,159 @@ const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true }) => 
                     <div className="text-3xl font-bold text-amber-700">{stats.unchecked}</div>
                 </div>
             </div>
+
+            {/* ===== Pending / Copy-for-WhatsApp Panel ===== */}
+            {materials.length > 0 && (
+                <div className="border-2 border-amber-200 rounded-xl overflow-hidden bg-white shadow-sm">
+                    {/* Panel Header – clickable to expand/collapse */}
+                    <button
+                        onClick={() => setShowPendingPanel(p => !p)}
+                        className="w-full flex items-center justify-between px-5 py-4 bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 transition-colors"
+                    >
+                        <div className="flex items-center gap-3">
+                            <ClipboardCheck size={20} className="text-amber-600" />
+                            <span className="font-bold text-gray-800">
+                                WhatsApp Item List
+                            </span>
+                            <span className="text-xs bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-semibold">
+                                {selectedForCopy.size} selected
+                            </span>
+                        </div>
+                        {showPendingPanel ? <ChevronUp size={20} className="text-gray-500" /> : <ChevronDown size={20} className="text-gray-500" />}
+                    </button>
+
+                    {showPendingPanel && (
+                        <div className="px-5 py-4 space-y-4">
+                            {/* Mode Tabs + Actions */}
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                {/* Mode Tabs */}
+                                <div className="flex bg-gray-100 rounded-lg p-0.5 gap-0.5">
+                                    {[
+                                        { key: 'pending', label: 'Pending', count: stats.unchecked, color: 'amber' },
+                                        { key: 'verified', label: 'On Site ✅', count: stats.checked, color: 'green' },
+                                        { key: 'all', label: 'All Items', count: stats.total, color: 'blue' }
+                                    ].map(tab => (
+                                        <button
+                                            key={tab.key}
+                                            onClick={() => switchMode(tab.key)}
+                                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${copyMode === tab.key
+                                                ? `bg-white shadow text-${tab.color}-700`
+                                                : 'text-gray-500 hover:text-gray-700'
+                                                }`}
+                                        >
+                                            {tab.label} ({tab.count})
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Actions */}
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={toggleSelectAll}
+                                        className="text-xs text-blue-600 hover:text-blue-800 font-semibold px-2 py-1 rounded hover:bg-blue-50 transition-colors"
+                                    >
+                                        {currentItemsFlat.every(m => selectedForCopy.has(m.id)) ? 'Deselect All' : 'Select All'}
+                                    </button>
+                                    <button
+                                        onClick={copyToClipboard}
+                                        disabled={selectedForCopy.size === 0}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all active:scale-95 shadow-sm ${copied
+                                            ? 'bg-green-600 text-white'
+                                            : selectedForCopy.size === 0
+                                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                                : 'bg-green-600 text-white hover:bg-green-700'
+                                            }`}
+                                    >
+                                        {copied ? (
+                                            <><CheckCircle size={16} /> Copied!</>
+                                        ) : (
+                                            <><Copy size={16} /> Copy for WhatsApp</>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Item List */}
+                            {currentItemsFlat.length === 0 ? (
+                                <div className="text-center py-6 text-gray-400 text-sm">
+                                    {copyMode === 'pending' ? 'No pending items — all verified! 🎉' : copyMode === 'verified' ? 'No verified items yet.' : 'No items.'}
+                                </div>
+                            ) : (
+                                <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                                    {Object.entries(currentItemsGrouped).map(([supplierName, items]) => (
+                                        <div key={supplierName}>
+                                            {/* Supplier Group Header */}
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <button
+                                                    onClick={() => toggleSelectGroup(items)}
+                                                    className="flex items-center gap-1.5 text-xs font-bold text-gray-700 hover:text-blue-700 transition-colors"
+                                                >
+                                                    <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center transition-colors ${items.every(m => selectedForCopy.has(m.id))
+                                                        ? 'bg-blue-600 border-blue-600'
+                                                        : items.some(m => selectedForCopy.has(m.id))
+                                                            ? 'bg-blue-200 border-blue-400'
+                                                            : 'border-gray-300'
+                                                        }`}
+                                                    >
+                                                        {items.every(m => selectedForCopy.has(m.id)) && (
+                                                            <Check size={10} className="text-white" />
+                                                        )}
+                                                    </div>
+                                                    <Package size={12} className="text-blue-500" />
+                                                    {supplierName}
+                                                </button>
+                                                <span className="text-[10px] text-gray-400">{items.length} items</span>
+                                            </div>
+
+                                            {/* Items */}
+                                            <div className="ml-4 space-y-1">
+                                                {items.map(m => {
+                                                    const isSelected = selectedForCopy.has(m.id);
+                                                    return (
+                                                        <button
+                                                            key={m.id}
+                                                            onClick={() => toggleSelectItem(m.id)}
+                                                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left transition-all text-sm ${isSelected
+                                                                ? 'bg-blue-50 border border-blue-200'
+                                                                : 'bg-gray-50 border border-transparent hover:border-gray-200'
+                                                                }`}
+                                                        >
+                                                            <div className={`flex-shrink-0 w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'}`}>
+                                                                {isSelected && <Check size={10} className="text-white" />}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <span className="font-medium text-gray-900 truncate block">{m.item}</span>
+                                                            </div>
+                                                            <span className="flex-shrink-0 text-xs text-gray-500 font-mono">
+                                                                {m.quantity} {m.unit || ''}
+                                                            </span>
+                                                            {m.deliveryChecked && (
+                                                                <CheckCircle size={14} className="flex-shrink-0 text-green-500" />
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Preview */}
+                            {selectedForCopy.size > 0 && (
+                                <details className="group">
+                                    <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-700 font-medium select-none">
+                                        Preview message ({selectedForCopy.size} items)
+                                    </summary>
+                                    <pre className="mt-2 bg-gray-50 border rounded-lg p-3 text-xs text-gray-700 whitespace-pre-wrap font-sans leading-relaxed max-h-48 overflow-y-auto">
+                                        {generateWhatsAppMessage()}
+                                    </pre>
+                                </details>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Materials grouped by supplier */}
             {Object.keys(groupedBySupplier.assigned).length > 0 && (
