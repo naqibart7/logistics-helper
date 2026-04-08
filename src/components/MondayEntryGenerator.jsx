@@ -75,6 +75,11 @@ const MondayEntryGenerator = ({ projects, suppliers, onUpdateSupplier }) => {
     useEffect(() => {
         if (!form.companyAccountName) {
             setMatchedSupplierId(null);
+            setForm(prev => ({
+                ...prev,
+                accountNumber: '',
+                bankName: ''
+            }));
             return;
         }
 

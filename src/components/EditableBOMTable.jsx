@@ -386,14 +386,14 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                         </td>
                                                     </>
                                                 )}
-                                                <td className="px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <div className="flex gap-1 justify-center">
+                                                <td className="px-3 py-2 transition-opacity">
+                                                    <div className="flex gap-2 justify-center">
                                                         <button
                                                             onClick={() => startEdit(m)}
-                                                            className="text-blue-600 hover:bg-blue-50 p-1 rounded transition-colors"
+                                                            className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"
                                                             title="Edit"
                                                         >
-                                                            <Edit2 size={14} />
+                                                            <Edit2 size={16} />
                                                         </button>
                                                         <button
                                                             onClick={() => {
@@ -401,10 +401,10 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
                                                                     onRemove(m.id);
                                                                 }
                                                             }}
-                                                            className="text-red-500 hover:bg-red-50 p-1 rounded transition-colors"
+                                                            className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
                                                             title="Delete"
                                                         >
-                                                            <Trash2 size={14} />
+                                                            <Trash2 size={16} />
                                                         </button>
                                                     </div>
                                                 </td>

@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Package, CheckCircle, Circle, AlertCircle, Check, Copy, ChevronDown, ChevronUp, ClipboardCheck } from 'lucide-react';
+import { Package, CheckCircle, Circle, AlertCircle, Check, Copy, ChevronDown, ChevronUp, ClipboardCheck, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 
-const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true, projectName = '' }) => {
+const ChecklistBOM = ({ materials, suppliers, onUpdate, onRemove, showPrices = true, projectName = '' }) => {
     const [showPendingPanel, setShowPendingPanel] = useState(true);
     const [selectedForCopy, setSelectedForCopy] = useState(new Set());
     const [copyMode, setCopyMode] = useState('pending'); // 'pending' | 'verified' | 'all'
@@ -280,6 +280,20 @@ const ChecklistBOM = ({ materials, suppliers, onUpdate, showPrices = true, proje
                                 Delivered: {new Date(m.actualDelivery).toLocaleDateString()}
                             </div>
                         )}
+                    </div>
+                    {/* Delete Item Button */}
+                    <div className="flex-shrink-0 self-center">
+                        <button
+                            onClick={() => {
+                                if (window.confirm('Delete this item?')) {
+                                    onRemove(m.id);
+                                }
+                            }}
+                            className="p-2 text-gray-300 hover:text-red-500 hover:bg-gray-100 rounded-lg transition-all"
+                            title="Delete item"
+                        >
+                            <Trash2 size={18} />
+                        </button>
                     </div>
                 </div>
             </div>

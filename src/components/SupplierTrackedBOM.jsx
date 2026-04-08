@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { 
     Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle, 
-    Check, Zap, Calendar, TrendingUp, LayoutList, ArrowRight, UserCheck 
+    Check, Zap, Calendar, TrendingUp, LayoutList, ArrowRight, UserCheck, Trash2 
 } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 import AutocompleteSupplierInput from './AutocompleteSupplierInput';
@@ -14,7 +14,7 @@ const STATUS_STYLES = {
     'N/A': { bg: 'bg-orange-50', text: 'text-orange-700', icon: X, border: 'border-orange-200' }
 };
 
-const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, showPrices = true }) => {
+const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onRemove, onBulkUpdate, showPrices = true }) => {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
 
@@ -417,18 +417,31 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
                         )}
                     </div>
 
-                    {/* Edit Button */}
-                    <div className="flex-shrink-0">
-                        {!isEditing && (
-                            <button
-                                onClick={() => startEdit(m)}
-                                className="p-2 text-blue-600 hover:bg-white rounded-lg transition-colors"
-                                title="Edit tracking"
-                            >
-                                <Edit2 size={16} />
-                            </button>
-                        )}
-                    </div>
+                            {/* Tracking Actions */}
+                            <div className="flex-shrink-0 flex items-center gap-1">
+                                {!isEditing && (
+                                    <>
+                                        <button
+                                            onClick={() => {
+                                                if (window.confirm('Are you sure you want to delete this item?')) {
+                                                    onRemove(m.id);
+                                                }
+                                            }}
+                                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Delete item"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => startEdit(m)}
+                                            className="p-2 text-blue-600 hover:bg-white rounded-lg transition-colors"
+                                            title="Edit tracking"
+                                        >
+                                            <Edit2 size={16} />
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                 </div>
 
                 {/* Edit Form */}

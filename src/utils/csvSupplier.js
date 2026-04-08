@@ -4,7 +4,7 @@ import { generateId } from './helpers';
  * Export suppliers to CSV format
  */
 export const exportSuppliersToCSV = (suppliers) => {
-    const headers = ['Name', 'Categories', 'Location', 'Contact', 'WhatsApp'];
+    const headers = ['Name', 'Categories', 'Location', 'Contact', 'WhatsApp', 'AccountNumber', 'BankName'];
 
     const csvRows = [
         headers.join(','),
@@ -13,9 +13,11 @@ export const exportSuppliersToCSV = (suppliers) => {
             return [
                 `"${supplier.name}"`,
                 `"${categories}"`,
-                `"${supplier.location}"`,
-                `"${supplier.contact}"`,
-                `"${supplier.whatsapp || ''}"`
+                `"${supplier.location || ''}"`,
+                `"${supplier.contact || ''}"`,
+                `"${supplier.whatsapp || ''}"`,
+                `"${supplier.accountNumber || ''}"`,
+                `"${supplier.bankName || ''}"`
             ].join(',');
         })
     ];
@@ -62,7 +64,7 @@ export const parseSupplierCSV = (csvText) => {
                 return;
             }
 
-            const [name, categories, location = '', contact = '', whatsapp = ''] = fields;
+            const [name, categories, location = '', contact = '', whatsapp = '', accountNumber = '', bankName = ''] = fields;
             const trimmedName = name.trim();
             const normalizedName = trimmedName.toLowerCase();
 
@@ -90,6 +92,8 @@ export const parseSupplierCSV = (csvText) => {
                 if (!existing.location && location.trim()) existing.location = location.trim();
                 if (!existing.contact && contact.trim()) existing.contact = contact.trim();
                 if (!existing.whatsapp && whatsapp.trim()) existing.whatsapp = whatsapp.trim();
+                if (!existing.accountNumber && accountNumber.trim()) existing.accountNumber = accountNumber.trim();
+                if (!existing.bankName && bankName.trim()) existing.bankName = bankName.trim();
             } else {
                 // Add new entry
                 suppliersMap.set(normalizedName, {
@@ -98,7 +102,9 @@ export const parseSupplierCSV = (csvText) => {
                     categories: newCategories,
                     location: location.trim(),
                     contact: contact.trim(),
-                    whatsapp: whatsapp.trim()
+                    whatsapp: whatsapp.trim(),
+                    accountNumber: accountNumber.trim(),
+                    bankName: bankName.trim()
                 });
             }
         } catch (error) {
@@ -150,10 +156,9 @@ const parseCSVLine = (line) => {
  * Generate CSV template for suppliers
  */
 export const downloadSupplierTemplate = () => {
-    const template = `Name,Categories,Location,Contact,WhatsApp
-ABC Hardware,"Gypsum;Metal Stud;Paint",Selangor,012-3456789,012-3456789
-XYZ Supplies,"Electrical;Lighting",Kuala Lumpur,013-9876543,013-9876543
-BuildMart,"Tiles;Flooring;Cement",Johor,014-5551234,014-5551234`;
+    const template = `Name,Categories,Location,Contact,WhatsApp,AccountNumber,BankName
+ABC Hardware,"Gypsum;Metal Stud;Paint",Selangor,012-3456789,60123456789,123456789,Maybank
+XYZ Supplies,"Electrical;Lighting",Kuala Lumpur,013-9876543,60139876543,987654321,CIMB`;
 
     const blob = new Blob([template], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');

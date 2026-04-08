@@ -463,8 +463,8 @@ const LogisticsSystem = () => {
     };
 
     const deleteSupplier = (id) => {
-        if (!window.confirm('Delete this supplier?')) return;
-        setSuppliers(prev => prev.filter(s => s.id !== id));
+        if (!window.confirm('Delete this supplier? All associated data will be removed.')) return;
+        setSuppliers(prev => prev.filter(s => String(s.id) !== String(id)));
     };
 
     const mergeSuppliers = (existing, incoming) => {
@@ -479,7 +479,9 @@ const LogisticsSystem = () => {
                     categories: Array.from(categorySet).sort(),
                     location: existingSup.location || newSup.location,
                     contact: existingSup.contact || newSup.contact,
-                    whatsapp: existingSup.whatsapp || newSup.whatsapp
+                    whatsapp: existingSup.whatsapp || newSup.whatsapp,
+                    accountNumber: existingSup.accountNumber || newSup.accountNumber,
+                    bankName: existingSup.bankName || newSup.bankName
                 };
             } else {
                 merged.push(newSup);
@@ -1044,6 +1046,7 @@ const LogisticsSystem = () => {
                                                 materials={selectedProject.materials}
                                                 suppliers={suppliers}
                                                 onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
+                                                onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
                                                 showPrices={true}
                                                 projectName={selectedProject.name}
                                             />
@@ -1052,6 +1055,7 @@ const LogisticsSystem = () => {
                                                 materials={selectedProject.materials}
                                                 suppliers={suppliers}
                                                 onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
+                                                onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
                                                 onBulkUpdate={(updates) => bulkUpdateProjectMaterials(selectedProject.id, updates)}
                                                 showPrices={true}
                                             />
