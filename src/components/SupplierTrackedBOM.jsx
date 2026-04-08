@@ -15,29 +15,80 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
 
-    // Group materials by supplier
+    // Group materials by supplier with intelligent urgency sorting
     const groupedBySupplier = useMemo(() => {
-        const groups = {
-            unassigned: [],
-            assigned: {}
+        const unassigned = [];
+        const assignedMap = {};
+
+        // 1. Definition of Action Urgency
+        const STATUS_WEIGHTS = {
+            'Not Ordered': 1, // Action required immediately
+            'Ordered': 2,     // Waiting on supplier/delivery
+            'Received': 3,    // Done
+            'N/A': 4          // Ignored/Cancelled
         };
 
         materials.forEach(m => {
             if (m.assignedSupplier) {
                 const supplierId = m.assignedSupplier.id;
-                if (!groups.assigned[supplierId]) {
-                    groups.assigned[supplierId] = {
+                if (!assignedMap[supplierId]) {
+                    assignedMap[supplierId] = {
                         supplier: m.assignedSupplier,
                         materials: []
                     };
                 }
-                groups.assigned[supplierId].materials.push(m);
+                assignedMap[supplierId].materials.push(m);
             } else {
-                groups.unassigned.push(m);
+                unassigned.push(m);
             }
         });
 
-        return groups;
+        // 2. Sort materials INSIDE each supplier
+        const assignedArray = Object.values(assignedMap).map(group => {
+            group.materials.sort((a, b) => {
+                const weightA = STATUS_WEIGHTS[a.orderStatus || 'Not Ordered'] || 5;
+                const weightB = STATUS_WEIGHTS[b.orderStatus || 'Not Ordered'] || 5;
+                
+                // Sort by primary urgency weight
+                if (weightA !== weightB) return weightA - weightB;
+                
+                // Secondary sort: Group by Category logically
+                const catA = a.category || '';
+                const catB = b.category || '';
+                if (catA !== catB) return catA.localeCompare(catB);
+                
+                // Tertiary sort: Alphabetical item name
+                return (a.item || '').localeCompare(b.item || '');
+            });
+            return group;
+        });
+
+        // 3. Sort OUTSIDE supplier groups
+        // Bubble suppliers with highest urgency items to the top!
+        assignedArray.sort((a, b) => {
+            // Find most urgent item weight per group (since they are already sorted, it's just the first item)
+            // Wait, what if materials is empty? Handle carefully
+            const minWeightA = a.materials.length > 0 ? (STATUS_WEIGHTS[a.materials[0].orderStatus || 'Not Ordered'] || 5) : 5;
+            const minWeightB = b.materials.length > 0 ? (STATUS_WEIGHTS[b.materials[0].orderStatus || 'Not Ordered'] || 5) : 5;
+            
+            if (minWeightA !== minWeightB) {
+                return minWeightA - minWeightB;   
+            }
+            return a.supplier.name.localeCompare(b.supplier.name);
+        });
+
+        // 4. Sort unassigned list gracefully
+        unassigned.sort((a, b) => {
+            const catA = a.category || '';
+            const catB = b.category || '';
+            if (catA !== catB) return catA.localeCompare(catB);
+            return (a.item || '').localeCompare(b.item || '');
+        });
+
+        return {
+            unassigned,
+            assignedArray
+        };
     }, [materials]);
 
     const startEdit = (material) => {
@@ -491,9 +542,9 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
             </div>
 
             {/* Materials grouped by supplier */}
-            {Object.keys(groupedBySupplier.assigned).length > 0 && (
+            {groupedBySupplier.assignedArray.length > 0 && (
                 <div className="space-y-6">
-                    {Object.values(groupedBySupplier.assigned).map(({ supplier, materials: groupMaterials }) => (
+                    {groupedBySupplier.assignedArray.map(({ supplier, materials: groupMaterials }) => (
                         <div key={supplier.id} className="space-y-3">
                             <div className="flex items-center gap-3 pb-2 border-b-2 border-blue-200">
                                 <Package size={20} className="text-blue-600" />
