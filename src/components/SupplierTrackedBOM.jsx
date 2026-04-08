@@ -1,5 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle, Check, Zap } from 'lucide-react';
+import { 
+    Edit2, Save, X, Package, CheckCircle, Clock, AlertCircle, 
+    Check, Zap, Calendar, TrendingUp, LayoutList, ArrowRight, UserCheck 
+} from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 import AutocompleteSupplierInput from './AutocompleteSupplierInput';
 import { CATEGORY_KEYWORDS } from '../data/initialData';
@@ -140,12 +143,37 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
     // Bulk assign: assign all unassigned materials to a supplier
     const bulkAssign = (supplier) => {
         const unassigned = materials.filter(m => !m.assignedSupplier);
+        const updates = [];
         unassigned.forEach(m => {
             const suggested = getSuggestedSuppliers(m);
             if (suggested.some(s => s.id === supplier.id)) {
-                assignSupplier(m.id, supplier);
+                updates.push({
+                    id: m.id,
+                    updates: {
+                        assignedSupplier: supplier,
+                        orderStatus: 'Not Ordered'
+                    }
+                });
             }
         });
+        if (updates.length > 0) onBulkUpdate(updates);
+    };
+
+    const autoMatchUnassigned = () => {
+        const updates = [];
+        groupedBySupplier.unassigned.forEach(m => {
+            const suggested = getSuggestedSuppliers(m);
+            if (suggested.length === 1) {
+                updates.push({
+                    id: m.id,
+                    updates: {
+                        assignedSupplier: suggested[0],
+                        orderStatus: 'Not Ordered'
+                    }
+                });
+            }
+        });
+        if (updates.length > 0) onBulkUpdate(updates);
     };
 
     // Bulk mark as received: mark all items in a group as 'Received'
@@ -291,10 +319,26 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
                         {/* Status & Quick Actions */}
                         <div className="mt-4 flex items-center flex-wrap gap-3">
                             {/* Current Status Badge */}
-                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border-2 ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} shadow-sm`}>
-                                <StatusIcon size={14} />
-                                {status.toUpperCase()}
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border-2 ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border} shadow-sm`}>
+                                    <StatusIcon size={14} />
+                                    {status.toUpperCase()}
+                                </span>
+                                
+                                {status === 'Ordered' && m.expectedDelivery && (
+                                    (() => {
+                                        const today = new Date().toISOString().split('T')[0];
+                                        if (m.expectedDelivery < today) {
+                                            return (
+                                                <span className="flex items-center gap-1 text-[10px] font-bold text-red-600 animate-pulse bg-red-50 px-2 py-1 rounded border border-red-200">
+                                                    <AlertCircle size={10} /> DELAYED
+                                                </span>
+                                            );
+                                        }
+                                        return null;
+                                    })()
+                                )}
+                            </div>
 
                             {/* Quick Action Toggles */}
                             <div className="flex items-center gap-1.5 bg-gray-50 border p-1 rounded-lg">
@@ -554,7 +598,21 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
                                         {supplier.location} • {supplier.contact}
                                     </p>
                                 </div>
-                                <div className="ml-auto flex items-center gap-3">
+                                <div className="ml-auto flex items-center gap-4">
+                                    {/* Progress stats for group */}
+                                    <div className="hidden sm:flex flex-col items-end gap-1">
+                                        <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400">
+                                            <TrendingUp size={10} />
+                                            PROGRESS: {Math.round((groupMaterials.filter(m => m.orderStatus === 'Received').length / groupMaterials.length) * 100)}%
+                                        </div>
+                                        <div className="w-24 h-1.5 bg-gray-100 rounded-full overflow-hidden border border-gray-200">
+                                            <div 
+                                                className="h-full bg-green-500 transition-all duration-500"
+                                                style={{ width: `${(groupMaterials.filter(m => m.orderStatus === 'Received').length / groupMaterials.length) * 100}%` }}
+                                            />
+                                        </div>
+                                    </div>
+
                                     <div className="flex items-center gap-2">
                                         {groupedBySupplier.unassigned.length > 0 && (
                                             <button
@@ -605,18 +663,38 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onBulkUpdate, show
                 </div>
             )}
 
-            {/* Unassigned materials */}
+            {/* Unassigned materials with Intelligence */}
             {groupedBySupplier.unassigned.length > 0 && (
-                <div className="space-y-3">
-                    <div className="flex items-center gap-3 pb-2 border-b-2 border-gray-200">
-                        <AlertCircle size={20} className="text-gray-400" />
-                        <h3 className="font-bold text-lg text-gray-600">Unassigned Materials</h3>
-                        <div className="ml-auto text-sm text-gray-500">
-                            {groupedBySupplier.unassigned.length} items
+                <div className="space-y-4 pt-6 border-t-2 border-dashed border-gray-200">
+                    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                        <div className="bg-gray-50 px-5 py-3 border-b border-gray-200 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <AlertCircle size={20} className="text-amber-500" />
+                                <div>
+                                    <h3 className="font-bold text-gray-800">Unassigned Materials</h3>
+                                    <p className="text-xs text-gray-500">{groupedBySupplier.unassigned.length} items waiting for supplier assignment</p>
+                                </div>
+                            </div>
+
+                            {(() => {
+                                const matchable = groupedBySupplier.unassigned.filter(m => getSuggestedSuppliers(m).length === 1);
+                                if (matchable.length > 0) {
+                                    return (
+                                        <button 
+                                            onClick={autoMatchUnassigned}
+                                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-all shadow-md active:scale-95 animate-in fade-in slide-in-from-right-2"
+                                        >
+                                            <Zap size={14} fill="currentColor" />
+                                            Smart Match {matchable.length} Items
+                                        </button>
+                                    );
+                                }
+                                return null;
+                            })()}
                         </div>
-                    </div>
-                    <div className="space-y-3">
-                        {groupedBySupplier.unassigned.map(renderMaterialRow)}
+                        <div className="p-5 space-y-3">
+                            {groupedBySupplier.unassigned.map(renderMaterialRow)}
+                        </div>
                     </div>
                 </div>
             )}
