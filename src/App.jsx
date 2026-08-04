@@ -764,9 +764,22 @@ const LogisticsSystem = () => {
                             </div>
                         </div>
 
-                        {user && (
-                            <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
-                                {projectsSync?.online ? (
+                        {user ? (
+                            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                {projectsSync.syncError ? (
+                                    <>
+                                        <CloudOff size={14} className="text-red-500" />
+                                        <span className="text-red-600 font-medium">
+                                            Cloud sync issue: {projectsSync.syncError}
+                                        </span>
+                                        <button
+                                            onClick={() => projectsSync.restoreFromCloud()}
+                                            className="text-blue-600 hover:underline font-medium"
+                                        >
+                                            Retry
+                                        </button>
+                                    </>
+                                ) : projectsSync.online ? (
                                     <>
                                         <Cloud size={14} className="text-green-600" />
                                         <span>Cloud sync active</span>
@@ -780,6 +793,11 @@ const LogisticsSystem = () => {
                                         <span>Offline — showing local data only</span>
                                     </>
                                 )}
+                            </div>
+                        ) : (
+                            <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
+                                <CloudOff size={14} className="text-amber-500" />
+                                <span>Not signed in — sign in to sync projects to the cloud</span>
                             </div>
                         )}
 

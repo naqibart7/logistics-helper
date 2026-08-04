@@ -129,6 +129,7 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
     const [value, setValue] = useState(() => storage.load(storageKey, defaultValue));
     const { user, online } = useSupabaseSession();
     const [lastSyncedAt, setLastSyncedAt] = useState(null);
+    const [syncError, setSyncError] = useState(null);
 
     // Pull cloud rows and MERGE with local state (instead of replacing) so
     // local-only rows are never lost — they get pushed up on the next sync.
@@ -142,6 +143,7 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
 
         if (error) {
             console.warn(`[supabase] ${tableName} fetch failed, using local data:`, error.message);
+            setSyncError(`fetch: ${error.message}`);
             return { pulled: 0, error };
         }
         if (data && data.length > 0) {
@@ -153,6 +155,7 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
                 return [...mapped, ...localOnly];
             });
             setLastSyncedAt(new Date());
+            setSyncError(null);
             return { pulled: mapped.length };
         }
         return { pulled: 0 };
@@ -193,11 +196,14 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
                     .upsert(rows, { onConflict: 'local_id' });
                 if (error) {
                     console.warn(`[supabase] ${tableName} sync failed:`, error.message);
+                    setSyncError(`push: ${error.message}`);
                 } else {
                     setLastSyncedAt(new Date());
+                    setSyncError(null);
                 }
             } catch (err) {
                 console.warn(`[supabase] ${tableName} sync error:`, err.message);
+                setSyncError(`push: ${err.message}`);
             }
         }, DEBOUNCE_MS);
 
@@ -209,7 +215,7 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
         setValue(prev => typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn);
     }, []);
 
-    const syncInfo = { online, lastSyncedAt, restoreFromCloud: pullCloud };
+    const syncInfo = { online, lastSyncedAt, restoreFromCloud: pullCloud, syncError, user: user ?? null };
 
     return [value, set, user, syncInfo];
 };
