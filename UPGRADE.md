@@ -1,0 +1,131 @@
+# UPGRADE.md — Site Logistics Helper v2
+
+Product: **Artseven Special Force Logistic**
+Generated: 2026-08-04
+
+This document summarises what was implemented in the "Unlimited-OCR + highest-ROI
+improvements" upgrade, how to run the OCR backend, the env vars required, and
+the known limitations.
+
+---
+
+## 1. What was implemented
+
+### 1.1 Unlimited-OCR backend (`server/`)
+- Express + multer + cors + dotenv OCR service.
+- `POST /ocr` accepts a multipart PDF **or** an array of page images.
+- If `UNLIMITED_OCR_URL` is set it proxies the upload to the GPU endpoint
+  (vLLM / transformers) and returns `method: "unlimited-ocr"`.
+- Otherwise it falls back to server-side pdfjs text extraction and returns
+  `method: "fallback"`, so the frontend never breaks.
+- `GET /health` reports which method is active.
+- Fixed a Node/pdfjs bug: pdfjs rejects `Buffer`, we now pass `Uint8Array.from(...)`.
+- `server/.env.example` documents the required env vars.
+- `server/schema.sql` contains the full Supabase table DDL.
+
+### 1.2 Frontend OCR path
+- `src/utils/ocrClient.js` → `extractTextSmart(file, { onStatus })`:
+  1. runs fast pdfjs layout extraction,
+  2. measures text density; if it looks like a real text PDF returns `pdfjs`,
+  3. otherwise posts the file to `/api/ocr` (proxied to the backend) using
+     `VITE_OCR_API_URL` or the Vite proxy path `/api/ocr`.
+- `App.jsx` `handleFileUpload` now uses `extractTextSmart`, shows the progress
+  states **"Detecting PDF type…" → "Running Unlimited-OCR (this may take 10-40s)…"
+  → "Parsing structure…"**, keeps the tabular path for text PDFs and routes
+  scanned PDFs through `smartParse`.
+
+### 1.3 Parser hardening (OCR noise)
+- `src/utils/advancedParser.js` gains an OCR pre-clean step (`preCleanText`):
+  collapse multiple spaces / blank runs, fix common OCR confusions (RM spacing,
+  `0→O`, `1→l`, stray bullets) and re-join lines OCR split mid-item.
+- The Job Cost section detector is now tolerant (`softHas`) to extra whitespace
+  and missing exact keywords (dropping separators + common char confusions).
+- Every material line now carries a `confidence` (0–1); low-confidence
+  (< 0.6) rows are highlighted in the Import Preview and editable BOM table.
+
+### 1.4 Supabase
+- New hooks in `src/hooks/useSupabaseTable.js`:
+  - `useSupabaseProjects()`, `useSupabaseSuppliers()`, `useSupabaseSession()`.
+- Identical API to the old hooks, so `App.jsx` changed minimally.
+- They sync to Supabase when signed in + online, always mirror to localStorage,
+  and gracefully fall back when offline / unauthenticated / tables missing.
+- No breaking change to the paste-text → parse → save → WhatsApp flow.
+
+### 1.5 Product improvements
+- **Catalog integration:** new `CatalogPicker` modal ("Add from Catalog") with a
+  searchable grid, friendly category filters (Electrical / Hardware / Paint /
+  Lighting / Wood), and ± quantity steppers that inject items into the project BOM.
+- **WhatsApp deep-link:** the `wa.me` link in Suggested Suppliers now mirrors the
+  edited message text.
+- **Quotes tracker:** new `QuotesTracker` section inside the project detail modal,
+  storing `{ supplierId, status, price, notes, requestedAt }` with a
+  Requested → Received → Accepted/Rejected pipeline.
+- **Purchase Order PDF:** `exportPOToPDF(project, supplier, materials)` in
+  `pdfExport.js` + a "Generate PO" button in the project modal (uses the accepted
+  quote's supplier, else the first supplier).
+- **Low-confidence highlighting** in `ImportPreview`.
+
+---
+
+## 2. How to run
+
+### Frontend
+```bash
+npm install
+npm run build      # production build
+npm run dev        # dev server on http://localhost:5173
+```
+The Vite dev server proxies `/api/*` to the OCR backend on `:3001`
+(see `vite.config.js`).
+
+### OCR backend
+```bash
+cd server
+npm install
+cp .env.example .env   # then set UNLIMITED_OCR_URL
+npm run dev            # node index.js on http://localhost:3001
+```
+Test after boot:
+```bash
+curl http://localhost:3001/health
+# {"ok":true,"method":"fallback"}            (when no GPU endpoint)
+# {"ok":true,"method":"unlimited-ocr"}       (when UNLIMITED_OCR_URL is set)
+```
+
+### Supabase
+1. Run `server/schema.sql` in the Supabase SQL editor.
+2. Set your URL + anon key in `src/utils/supabase.js` (already populated).
+3. RLS policies are included for signed-in users; anonymous users just use
+   localStorage until they sign in.
+
+---
+
+## 3. Environment variables
+
+| Var | Where | Purpose |
+|-----|-------|---------|
+| `UNLIMITED_OCR_URL` | `server/.env` | GPU OCR proxy URL (e.g. `http://localhost:8000/v1/ocr`). If unset → pdfjs fallback. |
+| `PORT` | `server/.env` | Backend port (default `3001`). |
+| `VITE_OCR_API_URL` | root `.env.local` | Optional; overrides the OCR endpoint. Defaults to the Vite proxy `/api/ocr`. |
+
+---
+
+## 4. Known limitations
+
+- **Unlimited-OCR requires a GPU server.** This repo only ships the *client + proxy*.
+  Without `UNLIMITED_OCR_URL`, scanned PDFs fall back to pdfjs text extraction,
+  which returns little or no text for image-only scans — so scanned jobs may
+  produce no materials and show the "no items found" state (a clear, safe fallback,
+  not a crash).
+- **Supabase tables must exist.** Until `server/schema.sql` is run, cloud sync is a
+  no-op and the app silently uses localStorage (by design).
+- **Parser confidence is heuristic.** `confidence` is derived from how much of a
+  line (item + qty + unit price + total) was recovered plus a fuzzy catalog match.
+  It does not measure model-level OCR certainty.
+- **Catalog categories** are bucketed into a friendly subset (Electrical / Hardware
+  / Paint / Lighting / Wood / Other); fine-grained source categories still show the
+  original value in the raw catalog (Items tab).
+- **Real-time Supabase subscriptions** are stubbed (see the note at the bottom of
+  `useSupabaseTable.js`) — polling/push is done on change instead of live mirrors.
+- The existing paste-text → parse → save → WhatsApp flow is unchanged and verified;
+  a fresh checklist PDF/layout sample was used to confirm fallback OCR + parse.
