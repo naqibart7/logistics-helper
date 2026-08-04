@@ -4,13 +4,19 @@
  * The browser posts a PDF to `/api/ocr` when pdfjs detects a scanned document
  * (little embedded text). On the local dev server this route is proxied to the
  * Express OCR service (`server/index.js`); on Vercel it is served by this
- * function, which performs server-side pdfjs text extraction.
+ * function.
  *
- * When a GPU `UNLIMITED_OCR_URL` proxy is desired on Vercel, point
- * `VITE_OCR_API_URL` at the deployed proxy instead (see UPGRADE.md).
+ * Behaviour:
+ *  - If the `UNLIMITED_OCR_URL` env var is set (Vercel → project → Settings →
+ *    Environment Variables), the file is forwarded to that GPU endpoint and the
+ *    upstream text is returned with `method: "unlimited-ocr"`.
+ *  - Otherwise it performs server-side pdfjs text extraction and returns
+ *    `method: "fallback"`.
  */
 import busboy from 'busboy';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+
+const OCR_PROXY_URL = process.env.UNLIMITED_OCR_URL;
 
 function cleanExtractedText(text) {
   return String(text || '')
@@ -110,6 +116,29 @@ function parseMultipart(req) {
   });
 }
 
+/** Forward the uploaded PDF to the configured Unlimited-OCR GPU endpoint. */
+async function proxyToUnlimitedOCR(buffer, filename) {
+  const form = new FormData();
+  form.append('file', new Blob([buffer], { type: 'application/pdf' }), filename || 'upload.pdf');
+
+  const response = await fetch(OCR_PROXY_URL, {
+    method: 'POST',
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Unlimited-OCR upstream error (${response.status}): ${errorText}`);
+  }
+
+  const payload = await response.json();
+  return {
+    text: cleanExtractedText(payload.text),
+    pages: Number(payload.pages || 1),
+    method: 'unlimited-ocr',
+  };
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -124,6 +153,17 @@ export default async function handler(req, res) {
     const name = (filename || '').toLowerCase();
     if (!name.endsWith('.pdf')) {
       return res.json({ text: '', pages: 1, method: 'fallback' });
+    }
+
+    if (OCR_PROXY_URL) {
+      try {
+        const proxied = await proxyToUnlimitedOCR(buffer, filename);
+        if (proxied.text) {
+          return res.json(proxied);
+        }
+      } catch (error) {
+        console.warn('Unlimited-OCR proxy failed, falling back:', error.message);
+      }
     }
 
     const result = await extractPdfTextFallback(buffer);

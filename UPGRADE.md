@@ -79,7 +79,10 @@ the known limitations.
   output `dist`) to Vercel.
 - `api/ocr.js` is a serverless OCR fallback that mirrors the Express pdfjs path
   (busboy multipart parsing + pdfjs text extraction), so the frontend OCR path
-  (`/api/ocr`) works in production without a running GPU server.
+  (`/api/ocr`) works in production without a running GPU server. When the Vercel
+  env var `UNLIMITED_OCR_URL` is set, the function forwards the PDF to that GPU
+  endpoint and returns its text (`method: "unlimited-ocr"`); otherwise it falls
+  back to pdfjs extraction (`method: "fallback"`).
 - Deployed from the `logistics-v2` branch with `vercel --prod --name logistics-helper`.
   Production alias: `https://logistics-helper.vercel.app`.
 - Deployment protection (Vercel Authentication) must be disabled in the dashboard
@@ -125,7 +128,7 @@ curl http://localhost:3001/health
 
 | Var | Where | Purpose |
 |-----|-------|---------|
-| `UNLIMITED_OCR_URL` | `server/.env` | GPU OCR proxy URL (e.g. `http://localhost:8000/v1/ocr`). If unset → pdfjs fallback. |
+| `UNLIMITED_OCR_URL` | `server/.env` **or** Vercel project env var | GPU OCR proxy URL (e.g. `http://localhost:8000/v1/ocr`). Set on Vercel to make `/api/ocr` use Unlimited-OCR. If unset → pdfjs fallback. |
 | `PORT` | `server/.env` | Backend port (default `3001`). |
 | `VITE_OCR_API_URL` | root `.env.local` | Optional; overrides the OCR endpoint. Defaults to the Vite proxy `/api/ocr`. |
 
