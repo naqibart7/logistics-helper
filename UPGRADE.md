@@ -74,6 +74,24 @@ the known limitations.
   in a collapsible "N low-confidence line(s) excluded" panel with name, qty × price,
   confidence % and an **Add** button to manually re-include a specific line.
 
+### 1.7 Data recovery & sync status
+- **JSON backup Export/Import** (Projects tab): downloads `{ projects, suppliers,
+  itemCatalog }` to `logistics-backup-YYYY-MM-DD.json`; import supports Merge or
+  Replace. Needed because browser `localStorage` is per-origin, so the deployed
+  `https://logistics-helper.vercel.app` cannot see data saved on `localhost`.
+- **Cloud pull now merges** instead of replacing: rows in the Supabase table are
+  merged with local rows by `id` (local-only rows are kept and pushed up), so no
+  data is ever silently dropped on restore.
+- **Sync indicator + manual Restore**: when signed in, the Projects tab shows
+  "Cloud sync active · Last synced HH:MM" (or "Offline — showing local data only")
+  and a **Restore** button that re-pulls from the cloud and merges.
+
+### 1.8 Example hosted OCR endpoint (`ocr-server/`)
+- `ocr-server/main.py` is a FastAPI reference implementing the exact
+  `UNLIMITED_OCR_URL` contract: `POST /v1/ocr`, multipart `file` field →
+  `{ text, pages }`. The model call is stubbed (`extract_text_with_your_model`)
+  with vLLM OpenAI-compatible examples in comments. Run with uvicorn on the GPU box.
+
 ### 1.6 Vercel deployment (serverless)
 - `vercel.json` deploys the Vite app (framework `vite`, build `npm run build`,
   output `dist`) to Vercel.

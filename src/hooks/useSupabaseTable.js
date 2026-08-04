@@ -128,33 +128,52 @@ export const useSupabaseSession = () => {
 const useSupabaseTable = (tableName, storageKey, defaultValue) => {
     const [value, setValue] = useState(() => storage.load(storageKey, defaultValue));
     const { user, online } = useSupabaseSession();
+    const [lastSyncedAt, setLastSyncedAt] = useState(null);
+
+    // Pull cloud rows and MERGE with local state (instead of replacing) so
+    // local-only rows are never lost — they get pushed up on the next sync.
+    const pullCloud = useCallback(async () => {
+        if (!supabase || !user || !online) return { pulled: 0 };
+        const { data, error } = await supabase
+            .from(tableName)
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.warn(`[supabase] ${tableName} fetch failed, using local data:`, error.message);
+            return { pulled: 0, error };
+        }
+        if (data && data.length > 0) {
+            const mapped = data.map(row => fromRow(tableName, row));
+            const cloudIds = new Set(mapped.map(m => m.id));
+            setValue(prev => {
+                const prevList = Array.isArray(prev) ? prev : [];
+                const localOnly = prevList.filter(p => !cloudIds.has(p.id));
+                return [...mapped, ...localOnly];
+            });
+            setLastSyncedAt(new Date());
+            return { pulled: mapped.length };
+        }
+        return { pulled: 0 };
+    }, [tableName, user, online]);
 
     // 1. Initial cloud pull (only when signed in & online).
     useEffect(() => {
         if (!supabase || !user || !online) return;
         let cancelled = false;
 
-        (async () => {
-            const { data, error } = await supabase
-                .from(tableName)
-                .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false });
-
+        pullCloud().then(({ pulled }) => {
             if (cancelled) return;
-            if (error) {
-                console.warn(`[supabase] ${tableName} fetch failed, using local data:`, error.message);
-                return;
+            if (pulled === 0 && value.length === 0) {
+                // Signed in but the cloud table is empty: nothing to restore.
+                console.info(`[supabase] ${tableName}: cloud empty, keeping local.`);
             }
-            if (data && data.length > 0) {
-                const mapped = data.map(row => fromRow(tableName, row));
-                setValue(mapped);
-                storage.save(storageKey, mapped);
-            }
-        })();
+        });
 
         return () => { cancelled = true; };
-    }, [tableName, storageKey, user, online]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tableName, user, online]);
 
     // 2. Mirror every value change to localStorage (offline-safe).
     useEffect(() => {
@@ -174,6 +193,8 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
                     .upsert(rows, { onConflict: 'local_id' });
                 if (error) {
                     console.warn(`[supabase] ${tableName} sync failed:`, error.message);
+                } else {
+                    setLastSyncedAt(new Date());
                 }
             } catch (err) {
                 console.warn(`[supabase] ${tableName} sync error:`, err.message);
@@ -188,7 +209,9 @@ const useSupabaseTable = (tableName, storageKey, defaultValue) => {
         setValue(prev => typeof newValueOrFn === 'function' ? newValueOrFn(prev) : newValueOrFn);
     }, []);
 
-    return [value, set, user];
+    const syncInfo = { online, lastSyncedAt, restoreFromCloud: pullCloud };
+
+    return [value, set, user, syncInfo];
 };
 
 /**

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check } from 'lucide-react';
+import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check, RefreshCw } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId, searchFilter } from './utils/helpers';
 import { exportBOMToCSV } from './utils/csvExport';
@@ -41,7 +41,7 @@ const generateSafeId = () => {
 
 const LogisticsSystem = () => {
     const [activeTab, setActiveTab] = useState('projects');
-    const [projects, setProjects, user] = useSupabaseProjects();
+    const [projects, setProjects, user, projectsSync] = useSupabaseProjects();
     const [suppliers, setSuppliers] = useSupabaseSuppliers();
     const [itemCatalog, setItemCatalog] = useSyncedState(STORAGE_KEYS.ITEM_CATALOG, standardCatalog);
     const [showAuth, setShowAuth] = useState(false);
@@ -747,6 +747,14 @@ const LogisticsSystem = () => {
                                         <Download size={16} /> Export
                                     </button>
                                     <button
+                                        onClick={() => projectsSync?.restoreFromCloud?.()}
+                                        disabled={!user || !projectsSync?.online}
+                                        title={user ? 'Pull latest from the cloud (merges with local data)' : 'Sign in to restore from the cloud'}
+                                        className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 flex items-center gap-2 font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <RefreshCw size={16} /> Restore
+                                    </button>
+                                    <button
                                         onClick={() => setShowNewProject(true)}
                                         className="bg-blue-700 text-white px-5 py-2.5 rounded-lg hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors"
                                     >
@@ -755,6 +763,25 @@ const LogisticsSystem = () => {
                                 </div>
                             </div>
                         </div>
+
+                        {user && (
+                            <div className="mb-4 flex items-center gap-2 text-xs text-gray-500">
+                                {projectsSync?.online ? (
+                                    <>
+                                        <Cloud size={14} className="text-green-600" />
+                                        <span>Cloud sync active</span>
+                                        {projectsSync.lastSyncedAt && (
+                                            <span>· Last synced {projectsSync.lastSyncedAt.toLocaleTimeString()}</span>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <CloudOff size={14} className="text-amber-500" />
+                                        <span>Offline — showing local data only</span>
+                                    </>
+                                )}
+                            </div>
+                        )}
 
                         {filteredProjects.length === 0 ? (
                             <div className="bg-white rounded-xl shadow p-12 text-center border border-gray-200">
