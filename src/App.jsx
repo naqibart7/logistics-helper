@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId, searchFilter } from './utils/helpers';
@@ -55,6 +55,70 @@ const LogisticsSystem = () => {
             }
         }
     }, [projects.length]); // Only run when count changes
+
+    // ─── Backup: export / import projects + suppliers as a JSON file ─────────
+    // Browser localStorage is per-origin, so the live site can't see data saved
+    // on localhost. This lets you move data between origins (and make real backups).
+    const backupFileRef = useRef(null);
+
+    const exportBackup = () => {
+        const payload = {
+            app: 'artseven-special-force-logistic',
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            projects: projects || [],
+            suppliers: suppliers || [],
+            itemCatalog: itemCatalog || [],
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `logistics-backup-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    const importBackup = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            try {
+                const data = JSON.parse(reader.result);
+                const incomingProjects = Array.isArray(data.projects) ? data.projects : [];
+                const incomingSuppliers = Array.isArray(data.suppliers) ? data.suppliers : [];
+                const incomingCatalog = Array.isArray(data.itemCatalog) ? data.itemCatalog : null;
+
+                if (incomingProjects.length === 0 && incomingSuppliers.length === 0) {
+                    window.alert('This backup contains no projects or suppliers.');
+                    return;
+                }
+
+                const replace = window.confirm('Replace current data, or merge?\n\nOK = Replace everything\nCancel = Merge (keeps existing entries, adds any new ones)');
+
+                if (replace) {
+                    setProjects(incomingProjects);
+                    setSuppliers(incomingSuppliers.length ? incomingSuppliers : suppliers);
+                    if (incomingCatalog) setItemCatalog(incomingCatalog);
+                } else {
+                    const byId = (list, idKey) => new Set((list || []).map(x => x[idKey]));
+                    const knownProjects = byId(projects, 'id');
+                    const knownSuppliers = byId(suppliers, 'id');
+                    setProjects(prev => [...prev, ...incomingProjects.filter(p => !knownProjects.has(p.id))]);
+                    setSuppliers(prev => [...prev, ...incomingSuppliers.filter(s => !knownSuppliers.has(s.id))]);
+                    if (incomingCatalog) setItemCatalog(incomingCatalog);
+                }
+
+                window.alert(`Backup imported: ${incomingProjects.length} project(s), ${incomingSuppliers.length} supplier(s).`);
+            } catch (error) {
+                console.error('Backup import error:', error);
+                window.alert('Could not read that file. Make sure it is a backup JSON exported from this app.');
+            }
+        };
+        reader.readAsText(file);
+    };
 
     const [selectedProject, setSelectedProject] = useState(null);
     const [showNewProject, setShowNewProject] = useState(false);
@@ -657,12 +721,38 @@ const LogisticsSystem = () => {
                                         placeholder="Search projects..."
                                     />
                                 </div>
-                                <button
-                                    onClick={() => setShowNewProject(true)}
-                                    className="bg-blue-700 text-white px-5 py-2.5 rounded-lg hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors"
-                                >
-                                    <Plus size={18} /> New Project
-                                </button>
+                                <div className="flex gap-2">
+                                    <input
+                                        ref={backupFileRef}
+                                        type="file"
+                                        accept=".json,application/json"
+                                        className="hidden"
+                                        onChange={(e) => {
+                                            importBackup(e.target.files[0]);
+                                            e.target.value = '';
+                                        }}
+                                    />
+                                    <button
+                                        onClick={() => backupFileRef.current?.click()}
+                                        title="Import a backup JSON (e.g. exported from a local copy)"
+                                        className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 flex items-center gap-2 font-medium transition-colors"
+                                    >
+                                        <Upload size={16} /> Import
+                                    </button>
+                                    <button
+                                        onClick={exportBackup}
+                                        title="Download all projects and suppliers as a JSON backup"
+                                        className="border border-gray-300 text-gray-700 px-4 py-2.5 rounded-lg hover:bg-gray-50 flex items-center gap-2 font-medium transition-colors"
+                                    >
+                                        <Download size={16} /> Export
+                                    </button>
+                                    <button
+                                        onClick={() => setShowNewProject(true)}
+                                        className="bg-blue-700 text-white px-5 py-2.5 rounded-lg hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors"
+                                    >
+                                        <Plus size={18} /> New Project
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
