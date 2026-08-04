@@ -70,6 +70,29 @@ const computeConfidence = ({ item, quantity, price, total, matchScore }) => {
     return Math.min(1, Number(score.toFixed(2)));
 };
 
+// Minimum confidence for a line to be imported as a material. Rows below this
+// (OCR noise, missing qty/price, short or summary lines) are moved to the
+// `lowConfidence` list so they can be reviewed/re-added rather than silently
+// polluting the BOM. Matches the previous "strict" extraction rules.
+const MIN_CONFIDENCE = 0.6;
+
+/**
+ * Partition candidates into confident materials and low-confidence rows that
+ * should be reviewed. High-confidence rows are imported; the rest are reported
+ * separately so the UI can offer them for manual confirmation.
+ * @param {Array} items - parsed candidate materials
+ * @returns {{materials: Array, lowConfidence: Array}}
+ */
+const splitByConfidence = (items) => {
+    const materials = [];
+    const lowConfidence = [];
+    for (const item of items) {
+        if ((item.confidence ?? 1) >= MIN_CONFIDENCE) materials.push(item);
+        else lowConfidence.push(item);
+    }
+    return { materials, lowConfidence };
+};
+
 /**
  * Re-join lines that OCR split mid-item.
  * Conservative: only merges when the first line has no numbers and is not an
@@ -673,6 +696,9 @@ export const smartParse = (text) => {
         }
 
         // Add statistics
+        const { materials: confidentMaterials, lowConfidence } = splitByConfidence(materials);
+        materials = confidentMaterials;
+
         const totalQuantity = materials.reduce((sum, m) => sum + (m.quantity || 0), 0);
         const totalPrice = materials.reduce((sum, m) => sum + (m.total || 0), 0);
         const categories = [...new Set(materials.map(m => m.category || 'MATERIALS'))];
@@ -683,13 +709,14 @@ export const smartParse = (text) => {
             totalPrice: totalPrice,
             categories: categories.length,
             categoryList: categories,
-            lowConfidence: materials.filter(m => (m.confidence || 1) < 0.6).length
+            lowConfidence: lowConfidence.length
         };
 
         return {
             format,
             metadata: { ...metadata, ...stats },
             materials,
+            lowConfidence,
             success: materials.length > 0,
             ocrCleaned,
             errors: materials.length === 0 ? ['No materials found in document'] : []
@@ -700,6 +727,7 @@ export const smartParse = (text) => {
             format: 'ERROR',
             metadata: {},
             materials: [],
+            lowConfidence: [],
             success: false,
             errors: [error.message]
         };
@@ -845,6 +873,9 @@ export const smartParseTabular = (tabularData, rawText) => {
             });
         }
 
+        const { materials: confidentMaterials, lowConfidence } = splitByConfidence(materials);
+        materials = confidentMaterials;
+
         const totalQuantity = materials.reduce((sum, m) => sum + (m.quantity || 0), 0);
         const totalPrice = materials.reduce((sum, m) => sum + (m.total || 0), 0);
         const categories = [...new Set(materials.map(m => m.category || 'MATERIALS'))];
@@ -855,7 +886,7 @@ export const smartParseTabular = (tabularData, rawText) => {
             totalPrice: totalPrice,
             categories: categories.length,
             categoryList: categories,
-            lowConfidence: materials.filter(m => (m.confidence || 1) < 0.6).length
+            lowConfidence: lowConfidence.length
         };
 
         if (!metadata.totalProject && materials.length > 0) metadata.totalProject = totalPrice.toFixed(2);
@@ -864,12 +895,13 @@ export const smartParseTabular = (tabularData, rawText) => {
             format,
             metadata: { ...metadata, ...stats },
             materials,
+            lowConfidence,
             success: materials.length > 0,
             errors: materials.length === 0 ? ['No materials found (Tabular Parsing)'] : []
         };
     } catch (error) {
         console.error('Tabular Parser error:', error);
-        return { format: 'ERROR', metadata: {}, materials: [], success: false, errors: [error.message] };
+        return { format: 'ERROR', metadata: {}, materials: [], lowConfidence: [], success: false, errors: [error.message] };
     }
 };
 

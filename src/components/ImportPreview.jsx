@@ -6,6 +6,8 @@ import { formatCurrency } from '../utils/pdfParser';
 const ImportPreview = ({ data, onConfirm, onCancel }) => {
     const [metadata, setMetadata] = useState(data.metadata);
     const [materials, setMaterials] = useState(data.materials);
+    const [excludedRows, setExcludedRows] = useState(data.lowConfidence || []);
+    const [showExcluded, setShowExcluded] = useState(false);
     const [showRawText, setShowRawText] = useState(false);
     const format = data.format || 'UNKNOWN';
 
@@ -23,6 +25,11 @@ const ImportPreview = ({ data, onConfirm, onCancel }) => {
 
     const newMaterial = (item) => {
         setMaterials(prev => [...prev, item]);
+    };
+
+    const reAddExcluded = (item) => {
+        newMaterial(item);
+        setExcludedRows(prev => prev.filter(m => m !== item));
     };
 
     const handleSave = () => {
@@ -64,7 +71,7 @@ const ImportPreview = ({ data, onConfirm, onCancel }) => {
     // Calculate totals for preview
     const totalCost = materials.reduce((sum, m) => sum + (m.price || 0), 0);
     const itemsWithPrice = materials.filter(m => m.price).length;
-    const lowConfidenceItems = materials.filter(m => m.confidence !== undefined && m.confidence < 0.6);
+    const remainingExcluded = excludedRows.length;
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -148,18 +155,48 @@ const ImportPreview = ({ data, onConfirm, onCancel }) => {
 
             {/* Materials Tables Section */}
             <div className="space-y-6">
-                {lowConfidenceItems.length > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
-                        <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                            <p className="font-semibold text-amber-900 text-sm">
-                                {lowConfidenceItems.length} low-confidence line(s) detected
-                            </p>
-                            <p className="text-xs text-amber-800 mt-1">
-                                These rows were likely affected by OCR noise. They are highlighted in the table below —
-                                review the item names, quantities and prices before confirming the import.
-                            </p>
-                        </div>
+                {remainingExcluded > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden">
+                        <button
+                            onClick={() => setShowExcluded(!showExcluded)}
+                            className="w-full p-4 flex items-start gap-3 text-left hover:bg-amber-100 transition-colors"
+                        >
+                            <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div className="flex-1">
+                                <p className="font-semibold text-amber-900 text-sm">
+                                    {remainingExcluded} low-confidence line(s) excluded
+                                </p>
+                                <p className="text-xs text-amber-800 mt-1">
+                                    These rows were likely affected by OCR noise and do not match the strict import rules.
+                                    Review the list below and add back any item you actually need.
+                                </p>
+                            </div>
+                            {showExcluded ? <ChevronDown size={18} className="text-amber-700 mt-1" /> : <ChevronRight size={18} className="text-amber-700 mt-1" />}
+                        </button>
+
+                        {showExcluded && (
+                            <div className="border-t border-amber-200">
+                                {excludedRows.map((m) => (
+                                    <div key={m.id} className="px-4 py-2 flex items-center gap-3 border-b last:border-b-0 border-amber-100">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm font-medium text-amber-900 truncate">{m.item}</p>
+                                            <p className="text-xs text-amber-700">
+                                                {m.quantity || '-'} x {formatCurrency(Number(m.unitPrice) > 0 ? m.unitPrice : (m.price || 0))}
+                                            </p>
+                                        </div>
+                                        <span className="text-xs font-semibold text-amber-700 px-2 py-0.5 bg-amber-200 rounded-full flex-shrink-0">
+                                            {Math.round(((m.confidence || 0) * 100))}%
+                                        </span>
+                                        <button
+                                            onClick={() => reAddExcluded(m)}
+                                            className="text-blue-600 hover:text-blue-800 font-medium text-sm flex items-center gap-1 flex-shrink-0"
+                                        >
+                                            <Plus size={16} /> Add
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
 
