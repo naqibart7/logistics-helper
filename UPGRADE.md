@@ -40,8 +40,15 @@ the known limitations.
   `0→O`, `1→l`, stray bullets) and re-join lines OCR split mid-item.
 - The Job Cost section detector is now tolerant (`softHas`) to extra whitespace
   and missing exact keywords (dropping separators + common char confusions).
-- Every material line now carries a `confidence` (0–1); low-confidence
-  (< 0.6) rows are highlighted in the Import Preview and editable BOM table.
+- Every material line now carries a `confidence` (0–1).
+- **Confidence filter (strict import):** rows scoring `< 0.6` are no longer
+  imported into the BOM. `smartParse` and `smartParseTabular` partition candidates
+  via `splitByConfidence()`; the confident rows go to `materials` and the rest are
+  returned separately as `lowConfidence` (count exposed as `metadata.lowConfidence`).
+  This enforces the original "strict" rules (item must carry qty + price/amount,
+  no summary/junk lines) so OCR noise no longer pollutes the project.
+- Materials vs **SUPPORTING MATERIAL** separation is preserved (category is kept
+  per extracted group and used to group the Import Preview tables).
 
 ### 1.4 Supabase
 - New hooks in `src/hooks/useSupabaseTable.js`:
@@ -63,7 +70,21 @@ the known limitations.
 - **Purchase Order PDF:** `exportPOToPDF(project, supplier, materials)` in
   `pdfExport.js` + a "Generate PO" button in the project modal (uses the accepted
   quote's supplier, else the first supplier).
-- **Low-confidence highlighting** in `ImportPreview`.
+- **Excluded low-confidence review list** in `ImportPreview`: discarded rows show
+  in a collapsible "N low-confidence line(s) excluded" panel with name, qty × price,
+  confidence % and an **Add** button to manually re-include a specific line.
+
+### 1.6 Vercel deployment (serverless)
+- `vercel.json` deploys the Vite app (framework `vite`, build `npm run build`,
+  output `dist`) to Vercel.
+- `api/ocr.js` is a serverless OCR fallback that mirrors the Express pdfjs path
+  (busboy multipart parsing + pdfjs text extraction), so the frontend OCR path
+  (`/api/ocr`) works in production without a running GPU server.
+- Deployed from the `logistics-v2` branch with `vercel --prod --name logistics-helper`.
+  Production alias: `https://logistics-helper.vercel.app`.
+- Deployment protection (Vercel Authentication) must be disabled in the dashboard
+  (project **Settings → Security → Deployment Protection**, and/or the team-level
+  **Authenticated Deployments** toggle) before the site is publicly reachable.
 
 ---
 
@@ -121,7 +142,8 @@ curl http://localhost:3001/health
   no-op and the app silently uses localStorage (by design).
 - **Parser confidence is heuristic.** `confidence` is derived from how much of a
   line (item + qty + unit price + total) was recovered plus a fuzzy catalog match.
-  It does not measure model-level OCR certainty.
+  It does not measure model-level OCR certainty. Rows below the import threshold are
+  excluded and surfaced for manual review rather than silently imported.
 - **Catalog categories** are bucketed into a friendly subset (Electrical / Hardware
   / Paint / Lighting / Wood / Other); fine-grained source categories still show the
   original value in the raw catalog (Items tab).
