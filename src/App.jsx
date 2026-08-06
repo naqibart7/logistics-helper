@@ -477,18 +477,35 @@ const LogisticsSystem = () => {
         }
     };
 
-    const addProjectMaterial = (projectId, material) => {
+    const upsertMaterials = (list, material, merge) => {
+        const base = Array.isArray(list) ? list : [];
+        if (!merge) return [...base, material];
+
+        const idx = base.findIndex(m =>
+            m && String(m.item || '').trim().toLowerCase() === String(material.item || '').trim().toLowerCase()
+        );
+        if (idx === -1) return [...base, material];
+
+        const existing = base[idx];
+        const quantity = (Number(existing.quantity) || 0) + (Number(material.quantity) || 0);
+        const unit = existing.pricePerUnit ?? material.pricePerUnit ?? null;
+        const total = Math.isFinite(Number(unit))
+            ? quantity * Number(unit)
+            : (Number(existing.total) || 0) + (Number(material.total) || 0);
+        const next = [...base];
+        next[idx] = { ...existing, quantity, pricePerUnit: unit, price: total, total };
+        return next;
+    };
+
+    const addProjectMaterial = (projectId, material, merge = false) => {
         setProjects(prev => prev.map(p => {
             if (p.id === projectId) {
-                return {
-                    ...p,
-                    materials: [...p.materials, material]
-                };
+                return { ...p, materials: upsertMaterials(p.materials, material, merge) };
             }
             return p;
         }));
         if (selectedProject?.id === projectId) {
-            const updatedMaterials = [...selectedProject.materials, material];
+            const updatedMaterials = upsertMaterials(selectedProject.materials, material, merge);
             setSelectedProject({
                 ...selectedProject,
                 materials: updatedMaterials
@@ -1290,7 +1307,7 @@ const LogisticsSystem = () => {
                                     >
                                         <CatalogPicker
                                             catalog={itemCatalog}
-                                            onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
+                                            onAdd={(material) => addProjectMaterial(selectedProject.id, material, true)}
                                         />
                                     </Modal>
 
