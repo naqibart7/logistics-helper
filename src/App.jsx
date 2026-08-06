@@ -1286,12 +1286,11 @@ const LogisticsSystem = () => {
                                         isOpen={showCatalog}
                                         onClose={() => setShowCatalog(false)}
                                         title="Add from Catalog"
-                                        maxWidth="max-w-3xl"
+                                        maxWidth="max-w-5xl"
                                     >
                                         <CatalogPicker
                                             catalog={itemCatalog}
                                             onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
-                                            onClose={() => setShowCatalog(false)}
                                         />
                                     </Modal>
 

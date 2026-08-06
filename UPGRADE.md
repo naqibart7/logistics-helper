@@ -92,6 +92,26 @@ the known limitations.
   `{ text, pages }`. The model call is stubbed (`extract_text_with_your_model`)
   with vLLM OpenAI-compatible examples in comments. Run with uvicorn on the GPU box.
 
+### 1.9 Click-first hierarchical catalog picker
+- **Hierarchy (`src/data/catalogHierarchy.js`):** the exact 13 main categories
+  with all sub-categories (`CATEGORY_TREE`). `buildCatalogHierarchy()` derives the
+  3-level tree **from the existing flat catalog**, so every item + price is
+  preserved and user-added items still appear. Matching is keyword-first (sub-name)
+  then legacy `category`; unmapped items fall back so nothing is lost (verified
+  213/213 items mapped). `QUICK_KITS` define reusable kits resolved against the
+  live catalog; `flattenHierarchy()` keeps a flat list for autocomplete/search.
+- **`CatalogPicker` rewritten** to a tap-only flow: main category cards with icons
+  → sub-category chips → dense item cards. Item cards show unit price, a
+  `− [qty] +` stepper, and quantity presets (5/10/20/50). Selections accumulate in
+  a cart with a live running total (item count + est. cost) in a sticky bottom bar,
+  committed with one "Add N items" tap. Quick Kits appear above the browser and
+  add multiple items in one tap. Search (instant) groups results by main category,
+  and empty sub-categories offer a lightweight custom-item quick-add so there are
+  no dead ends.
+- Material rows added still carry the standard shape (`category`, `item`,
+  `quantity`, `unit`, `pricePerUnit`, `price`) so the PDF/Excel import and
+  EditableBOMTable flows are unchanged. Catalog modal widened to `max-w-5xl`.
+
 ### 1.6 Vercel deployment (serverless)
 - `vercel.json` deploys the Vite app (framework `vite`, build `npm run build`,
   output `dist`) to Vercel.
