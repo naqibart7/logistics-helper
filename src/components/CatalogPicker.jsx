@@ -39,6 +39,101 @@ const makeMaterial = (item, qty) => ({
     catalogSub: item.subLabel || '',
 });
 
+/**
+ * One catalog item card (hoisted to module scope so the picker never remounts
+ * it — defining components inside render creates a new type each render).
+ */
+const ItemCard = ({ item, qty, onMinus, onPlus, onSetOne, onPreset }) => {
+    const price = Number(item.price) || 0;
+    return (
+        <div className={`border rounded-xl p-3 flex flex-col gap-2 bg-white transition-colors ${qty > 0 ? 'border-green-400 ring-2 ring-green-100' : 'border-gray-200'}`}>
+            <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 min-h-[2.5rem]">{item.name}</p>
+            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded self-start">
+                {price ? `${formatCurrency(price)} / pcs` : 'No price'}
+            </span>
+
+            <div className="flex items-center gap-1.5 mt-auto pt-1">
+                <button
+                    onClick={onMinus}
+                    disabled={qty === 0}
+                    className="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Decrease quantity"
+                >
+                    <Minus size={16} />
+                </button>
+                <button
+                    onClick={onSetOne}
+                    className="h-9 min-w-[2.5rem] px-2 rounded-lg bg-gray-100 hover:bg-gray-200 font-mono text-sm font-bold flex items-center justify-center"
+                    aria-label={qty === 0 ? 'Add one' : `Set quantity ${qty + 1}`}
+                >
+                    {qty || '+'}
+                </button>
+                <button
+                    onClick={onPlus}
+                    className="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 flex items-center justify-center"
+                    aria-label="Increase quantity"
+                >
+                    <Plus size={16} />
+                </button>
+                <div className="ml-auto flex gap-1">
+                    {PRESETS.map(p => (
+                        <button
+                            key={p}
+                            onClick={() => onPreset(p)}
+                            className={`px-2 py-1 rounded-md text-xs font-semibold border ${
+                                qty === p ? 'bg-green-600 text-white border-green-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                            }`}
+                        >
+                            {p}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+/**
+ * Quick-add form shown when a sub-category has no set items yet.
+ */
+const CustomItemForm = ({ mainLabel, subLabel, onAdd }) => {
+    const [name, setName] = useState('');
+    const [price, setPrice] = useState('');
+    const add = () => {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        const p = parseFloat(price) || 0;
+        const item = { key: `custom::${trimmed}`, name: trimmed, price: p, mainLabel, subLabel, category: mainLabel };
+        const material = { ...makeMaterial(item, 1), category: mainLabel };
+        onAdd(material);
+        setName('');
+        setPrice('');
+    };
+    return (
+        <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">No set items here yet — add one quickly</p>
+            <div className="flex gap-2">
+                <input
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Item name"
+                    className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                />
+                <input
+                    value={price}
+                    onChange={e => setPrice(e.target.value)}
+                    placeholder="RM"
+                    inputMode="decimal"
+                    className="w-20 border rounded-lg px-3 py-2 text-sm"
+                />
+                <button onClick={add} className="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 text-sm font-semibold">
+                    Add
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const CatalogPicker = ({ catalog, onAdd }) => {
     const hierarchy = useMemo(() => buildCatalogHierarchy(catalog), [catalog]);
     const flatItems = useMemo(() => flattenHierarchy(hierarchy), [hierarchy]);
@@ -100,97 +195,6 @@ const CatalogPicker = ({ catalog, onAdd }) => {
         return groups;
     }, [search, flatItems]);
 
-    // ─── Item card ────────────────────────────────────────────────────────────
-    const ItemCard = ({ item }) => {
-        const entry = cart[item.key];
-        const qty = entry ? entry.qty : 0;
-        const price = Number(item.price) || 0;
-        return (
-            <div className={`border rounded-xl p-3 flex flex-col gap-2 bg-white transition-colors ${qty > 0 ? 'border-green-400 ring-2 ring-green-100' : 'border-gray-200'}`}>
-                <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 min-h-[2.5rem]">{item.name}</p>
-                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded self-start">
-                    {price ? `${formatCurrency(price)} / pcs` : 'No price'}
-                </span>
-
-                <div className="flex items-center gap-1.5 mt-auto pt-1">
-                    <button
-                        onClick={() => bump(item, -1)}
-                        disabled={qty === 0}
-                        className="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 flex items-center justify-center disabled:opacity-30 disabled:cursor-not-allowed"
-                        aria-label="Decrease quantity"
-                    >
-                        <Minus size={16} />
-                    </button>
-                    <button
-                        onClick={() => setPreset(item, qty + 1)}
-                        className="h-9 min-w-[2.5rem] px-2 rounded-lg bg-gray-100 hover:bg-gray-200 font-mono text-sm font-bold flex items-center justify-center"
-                        aria-label={qty === 0 ? 'Add one' : `Set quantity ${qty + 1}`}
-                    >
-                        {qty || '+'}
-                    </button>
-                    <button
-                        onClick={() => bump(item, 1)}
-                        className="w-9 h-9 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-600 flex items-center justify-center"
-                        aria-label="Increase quantity"
-                    >
-                        <Plus size={16} />
-                    </button>
-                    <div className="ml-auto flex gap-1">
-                        {PRESETS.map(p => (
-                            <button
-                                key={p}
-                                onClick={() => setPreset(item, p)}
-                                className={`px-2 py-1 rounded-md text-xs font-semibold border ${
-                                    qty === p ? 'bg-green-600 text-white border-green-600' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
-                                }`}
-                            >
-                                {p}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        );
-    };
-
-    const CustomItemForm = ({ mainLabel, subLabel }) => {
-        const [name, setName] = useState('');
-        const [price, setPrice] = useState('');
-        const add = () => {
-            const trimmed = name.trim();
-            if (!trimmed) return;
-            const p = parseFloat(price) || 0;
-            const item = { key: `custom::${trimmed}`, name: trimmed, price: p, mainLabel, subLabel, category: mainLabel };
-            const material = { ...makeMaterial(item, 1), category: mainLabel };
-            onAdd(material);
-            setName('');
-            setPrice('');
-        };
-        return (
-            <div className="bg-gray-50 border border-dashed border-gray-300 rounded-xl p-4">
-                <p className="text-sm font-medium text-gray-700 mb-2">No set items here yet — add one quickly</p>
-                <div className="flex gap-2">
-                    <input
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        placeholder="Item name"
-                        className="flex-1 border rounded-lg px-3 py-2 text-sm"
-                    />
-                    <input
-                        value={price}
-                        onChange={e => setPrice(e.target.value)}
-                        placeholder="RM"
-                        inputMode="decimal"
-                        className="w-20 border rounded-lg px-3 py-2 text-sm"
-                    />
-                    <button onClick={add} className="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 text-sm font-semibold">
-                        Add
-                    </button>
-                </div>
-            </div>
-        );
-    };
-
     return (
         <div className="flex flex-col gap-4 max-h-[75vh]">
             {/* ── Sticky top: back + search + close ─────────────────────────── */}
@@ -233,7 +237,11 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                                             <span className="text-[11px] text-gray-400">{items.length}</span>
                                         </div>
                                         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                                            {items.map(i => <ItemCard key={i.key} item={i} />)}
+                                            {items.map(i => (
+                                                <ItemCard key={i.key} item={i} qty={cart[i.key]?.qty || 0}
+                                                    onMinus={() => bump(i, -1)} onPlus={() => bump(i, 1)}
+                                                    onSetOne={() => setPreset(i, (cart[i.key]?.qty || 0) + 1)} onPreset={(p) => setPreset(i, p)} />
+                                            ))}
                                         </div>
                                     </div>
                                 );
@@ -243,10 +251,14 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                 ) : activeMain ? (
                     activeSub ? (
                         activeSub.items.length === 0 ? (
-                            <CustomItemForm mainLabel={activeMain.label} subLabel={activeSub.label} />
+                            <CustomItemForm mainLabel={activeMain.label} subLabel={activeSub.label} onAdd={onAdd} />
                         ) : (
                             <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                                {activeSub.items.map(item => <ItemCard key={item.key} item={item} />)}
+                                {activeSub.items.map(item => (
+                                    <ItemCard key={item.key} item={item} qty={cart[item.key]?.qty || 0}
+                                        onMinus={() => bump(item, -1)} onPlus={() => bump(item, 1)}
+                                        onSetOne={() => setPreset(item, (cart[item.key]?.qty || 0) + 1)} onPreset={(p) => setPreset(item, p)} />
+                                ))}
                             </div>
                         )
                     ) : (
