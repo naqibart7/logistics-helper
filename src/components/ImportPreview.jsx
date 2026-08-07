@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Save, AlertCircle, CheckCircle, Edit2, FileText, ChevronDown, ChevronRight, X, Plus } from 'lucide-react';
 import EditableBOMTable from './EditableBOMTable';
 import { formatCurrency } from '../utils/pdfParser';
+import { recordCorrection } from '../utils/excelParser/learn.js';
 
 const ImportPreview = ({ data, onConfirm, onCancel }) => {
     const [metadata, setMetadata] = useState(data.metadata);
@@ -33,6 +34,18 @@ const ImportPreview = ({ data, onConfirm, onCancel }) => {
     };
 
     const handleSave = () => {
+        // Learning: persist any edits the user made so the NEXT parse of the
+        // same supplier + original text applies them automatically.
+        const supplier = metadata.supplier || 'SUPPLIER';
+        materials.forEach(m => {
+            if (!m.original) return;
+            const corrected = {};
+            if (m.item && m.item !== m.original) corrected.item = m.item;
+            if (m.quantity !== undefined) corrected.quantity = m.quantity;
+            if (m.unit) corrected.unit = m.unit;
+            if (m.unitPrice !== undefined) corrected.unitPrice = m.unitPrice;
+            if (Object.keys(corrected).length) recordCorrection({ supplier, original: m.original, corrected });
+        });
         onConfirm({
             metadata,
             materials,

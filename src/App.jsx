@@ -7,6 +7,7 @@ import { exportSuppliersToCSV, importSuppliersFromFile, downloadSupplierTemplate
 import { exportChecklistToPDF } from './utils/pdfChecklist';
 import { exportBOMToPDF, exportPOToPDF } from './utils/pdfExport';
 import { parseExcelCostFile } from './utils/excelParser';
+import { parseExcelV2 } from './utils/excelParser/index.js';
 import { formatCurrency } from './utils/pdfParser';
 import { smartParse, smartParseTabular } from './utils/advancedParser';
 import { extractTabularData } from './utils/pdfExtractor';
@@ -257,12 +258,16 @@ const LogisticsSystem = () => {
             let result;
 
             if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-                // Handle Excel import
-                setProcessingStep('Parsing Excel cost sheet...');
-                result = await parseExcelCostFile(file);
-                // For Excel, we might not have raw text in the same way,
-                // but we can generate a previewable summary
-                result.rawText = `Excel Import: ${file.name}\nSheets Processed: ${result.metadata.totalItems} items found.`;
+                // Excel → V2 interpreter: adaptive layout/header/columns/sections,
+                // confidence scoring, and catalog recognition. Falls back to the
+                // legacy highlighted-RM template parser when nothing matches.
+                setProcessingStep('Analysing workbook layout...');
+                result = await parseExcelV2(file, { catalog: itemCatalog || [], ai: true });
+                if (!result.success && result.lowConfidence?.length === 0) {
+                    setProcessingStep('Falling back to template parser...');
+                    result = await parseExcelCostFile(file);
+                }
+                result.rawText = result.rawText || `Excel Import: ${file.name}`;
                 result.ocrMethod = 'excel';
             } else {
                 // PDF → smart path: fast pdfjs detection first, then OCR backend for scanned docs
