@@ -19,7 +19,7 @@ import { extractSpecs } from './specs.js';
 import { recognizeMaterial } from './recognize.js';
 import { scoreCandidate, MIN_CONFIDENCE } from './confidence.js';
 import { enrichWithAI } from './ai.js';
-import { lookupCorrection, recordSupplierProfile } from './learn.js';
+import { lookupCorrection, recordCorrection, recordSupplierProfile } from './learn.js';
 import { generateId } from '../helpers.js';
 
 /* ── tiny pure helpers ─────────────────────────────────────────── */
@@ -112,6 +112,16 @@ export const parseExcelV2 = async (file, opts = {}) => {
 
     // 1) travel deterministically
     const scored = candidates.map(c => ({ c, score: scoreCandidate({ ...c.ent }) }));
+
+    // 1b) learn from reliable matches: a high-confidence catalog hit teaches
+    //     the knowledge base (supplier + original → catalog item) so the next
+    //     parse of the same supplier skips straight to the right item.
+    for (const x of scored) {
+        const rec = x.c.ent.rec;
+        if (rec && rec.hit === 'catalog' && rec.confidence >= 0.6 && x.c.original) {
+            recordCorrection({ supplier, original: x.c.original, corrected: { item: rec.name } });
+        }
+    }
 
     // 2) AI fallback — ONLY sub-threshold rows
     let byIndex = new Map();

@@ -11,6 +11,7 @@
  * the legacy `category` field). Items that match nothing fall back into a
  * sensible sub-category of their legacy category so nothing is ever stranded.
  */
+import { enrichItem } from '../utils/catalogEnrich.js';
 
 // ─── Icon names (lucide-react) per main category ─────────────────────────────
 // Imported by the picker, keyed by `icon`.
@@ -317,27 +318,31 @@ const classifyItem = (item) => {
 export const buildCatalogHierarchy = (flatCatalog) => {
     const items = Array.isArray(flatCatalog) ? flatCatalog : [];
 
+    // Enrich once up-front (unit/colour/size/brand + learned aliases) so both
+    // classification and the picker benefit from catalog "learning".
+    const enriched = items.map(item => enrichItem(item));
+
     return CATEGORY_TREE.map(main => {
         const subs = main.subs.map(sub => ({ ...sub, items: [] }));
         const subIndex = Object.fromEntries(subs.map(s => [s.id, s]));
 
-        items.forEach(item => {
-            const { mainId, subId } = classifyItem(item);
+        enriched.forEach(eItem => {
+            const { mainId, subId } = classifyItem(eItem);
             if (mainId !== main.id) return;
             const target = subIndex[subId] || subs[subs.length - 1];
             target.items.push({
-                key: `${item.name}::${item.price}`,
-                name: item.name,
-                price: Number(item.price) || 0,
-                category: item.category || main.label,
+                key: `${eItem.name}::${eItem.price}`,
+                name: eItem.name,
+                price: Number(eItem.price) || 0,
+                category: eItem.category || main.label,
                 mainLabel: main.label,
                 subLabel: target.label,
-                unit: item.unit || 'pcs',
-                brand: item.brand || '',
-                code: item.code || '',
-                size: item.size || '',
-                colour: item.colour || '',
-                aliases: Array.isArray(item.aliases) ? item.aliases : [],
+                unit: eItem.unit || 'pcs',
+                brand: eItem.brand || '',
+                code: eItem.code || '',
+                size: eItem.size || '',
+                colour: eItem.colour || '',
+                aliases: Array.isArray(eItem.aliases) ? eItem.aliases : [],
             });
         });
 

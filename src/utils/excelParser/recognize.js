@@ -8,6 +8,7 @@
  * it or defer the row to the AI fallback.
  */
 import { keyOf } from './normalize.js';
+import { itemAliases } from '../catalogEnrich.js';
 
 const STOP = new Set(['the', 'and', 'for', 'with', 'type', 'set', 'x', 'of', 'in', '&']);
 
@@ -42,9 +43,9 @@ export const recognizeMaterial = (itemText, flatCatalog, ctx = {}) => {
 
     let best = { confidence: 0, name: undefined, price: undefined, hit: 'none' };
     for (const c of flatCatalog) {
-        const catName = keyOf(c.name);
-        if (catName === '') continue;
-        const candidates = [catName, ...(Array.isArray(c.aliases) ? c.aliases : []).map(keyOf).filter(Boolean)];
+        const candidates = itemAliases(c); // name + aliases (learned) tokens
+        if (candidates.length === 0) continue;
+        const catName = candidates[0];
         let conf = 0;
         for (const cand of candidates) conf = Math.max(conf, overlapScore(query, cand));
         // Substring hit is a strong signal (name OR alias).
