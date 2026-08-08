@@ -1,18 +1,41 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Search, Download, FileUp, Package } from 'lucide-react';
+import { Plus, Trash2, Edit2, Check, X, Search, Download, FileUp, Package, Save } from 'lucide-react';
 
 const CATEGORIES = [
     'all', 'hardware', 'electrical', 'lighting', 'paint',
     'wainscotting', 'fastener', 'plumbing', 'tools', 'other'
 ];
 
+const EMPTY_FORM = { name: '', category: 'hardware', price: '', unit: 'pcs', brand: '', code: '', size: '', colour: '', aliases: '' };
+
+/** Split a comma-separated alias string into a clean array of lowercase tokens. */
+const parseAliases = (raw) => (raw || '')
+    .split(',')
+    .map(a => a.trim())
+    .filter(Boolean)
+    .map(a => a.toLowerCase());
+
+/** Build a catalog item object from a form (keeps unknown fields untouched). */
+const buildItem = (form, base = {}) => ({
+    ...base,
+    name: (form.name || '').trim(),
+    category: (form.category || '').trim().toLowerCase(),
+    price: parseFloat(form.price) || 0,
+    unit: (form.unit || 'pcs').trim().toLowerCase() || 'pcs',
+    brand: (form.brand || '').trim(),
+    code: (form.code || '').trim(),
+    size: (form.size || '').trim(),
+    colour: (form.colour || '').trim(),
+    aliases: parseAliases(form.aliases),
+});
+
 const ItemDatabase = ({ catalog, setCatalog }) => {
     const [search, setSearch] = useState('');
     const [categoryFilter, setCategoryFilter] = useState('all');
     const [editingId, setEditingId] = useState(null);
-    const [editForm, setEditForm] = useState({ name: '', category: '', price: '' });
+    const [editForm, setEditForm] = useState(EMPTY_FORM);
     const [showAddForm, setShowAddForm] = useState(false);
-    const [addForm, setAddForm] = useState({ name: '', category: 'hardware', price: '' });
+    const [addForm, setAddForm] = useState(EMPTY_FORM);
     const [sortField, setSortField] = useState('name');
     const [sortDir, setSortDir] = useState('asc');
     const fileInputRef = useRef(null);
@@ -27,12 +50,15 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
     const filteredItems = useMemo(() => {
         let items = [...catalog];
 
-        // Search
+        // Search across all useful fields
         if (search.trim()) {
             const q = search.toLowerCase();
             items = items.filter(item =>
                 item.name.toLowerCase().includes(q) ||
-                (item.category || '').toLowerCase().includes(q)
+                (item.category || '').toLowerCase().includes(q) ||
+                (item.brand || '').toLowerCase().includes(q) ||
+                (item.code || '').toLowerCase().includes(q) ||
+                (item.aliases || []).some(a => a.includes(q))
             );
         }
 
@@ -50,8 +76,8 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                 valA = parseFloat(a.price) || 0;
                 valB = parseFloat(b.price) || 0;
             } else {
-                valA = (a[sortField] || '').toLowerCase();
-                valB = (b[sortField] || '').toLowerCase();
+                valA = (a[sortField] || '').toString().toLowerCase();
+                valB = (b[sortField] || '').toString().toLowerCase();
             }
             if (valA < valB) return sortDir === 'asc' ? -1 : 1;
             if (valA > valB) return sortDir === 'asc' ? 1 : -1;
@@ -62,12 +88,8 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
     }, [catalog, search, categoryFilter, sortField, sortDir]);
 
     const toggleSort = (field) => {
-        if (sortField === field) {
-            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortDir('asc');
-        }
+        if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        else { setSortField(field); setSortDir('asc'); }
     };
 
     const sortIcon = (field) => {
@@ -78,66 +100,54 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
     // --- CRUD ---
     const handleAdd = () => {
         if (!addForm.name.trim()) return;
-        const newItem = {
-            name: addForm.name.trim(),
-            category: addForm.category.trim().toLowerCase(),
-            price: parseFloat(addForm.price) || 0
-        };
-        setCatalog(prev => [...prev, newItem]);
-        setAddForm({ name: '', category: 'hardware', price: '' });
+        setCatalog(prev => [...prev, buildItem(addForm)]);
+        setAddForm(EMPTY_FORM);
         setShowAddForm(false);
     };
 
-    const startEdit = (item, index) => {
-        setEditingId(index);
+    const startEdit = (item) => {
+        setEditingId(item);
         setEditForm({
-            name: item.name,
+            name: item.name || '',
             category: item.category || '',
-            price: item.price ?? ''
+            price: item.price ?? '',
+            unit: item.unit || 'pcs',
+            brand: item.brand || '',
+            code: item.code || '',
+            size: item.size || '',
+            colour: item.colour || '',
+            aliases: (item.aliases || []).join(', '),
         });
     };
 
-    const saveEdit = (originalIndex) => {
+    const saveEdit = (item) => {
         if (!editForm.name.trim()) return;
-        setCatalog(prev => {
-            // We need to map using the original catalog index, not filtered index
-            const updated = [...prev];
-            const actualIndex = prev.findIndex((item, i) => {
-                // Match by the filteredItems[originalIndex] reference
-                return item === filteredItems[originalIndex];
-            });
-            if (actualIndex !== -1) {
-                updated[actualIndex] = {
-                    ...updated[actualIndex],
-                    name: editForm.name.trim(),
-                    category: editForm.category.trim().toLowerCase(),
-                    price: parseFloat(editForm.price) || 0
-                };
-            }
-            return updated;
-        });
+        setCatalog(prev => prev.map(i => (i === item ? buildItem(editForm, item) : i)));
         setEditingId(null);
     };
 
     const cancelEdit = () => {
         setEditingId(null);
-        setEditForm({ name: '', category: '', price: '' });
+        setEditForm(EMPTY_FORM);
     };
 
-    const deleteItem = (filteredIndex) => {
-        const item = filteredItems[filteredIndex];
+    const deleteItem = (item) => {
         if (!window.confirm(`Delete "${item.name}"?`)) return;
         setCatalog(prev => prev.filter(i => i !== item));
     };
 
-    // --- CSV Export ---
+    // --- CSV Export (richer columns; 3-col legacy import still works) ---
     const exportCSV = () => {
-        const rows = [['Name', 'Category', 'Price']];
+        const rows = [['Name', 'Category', 'Price', 'Unit', 'Brand', 'Code', 'Aliases']];
         catalog.forEach(item => {
             rows.push([
                 `"${(item.name || '').replace(/"/g, '""')}"`,
                 item.category || '',
-                item.price ?? ''
+                item.price ?? '',
+                item.unit || 'pcs',
+                `"${(item.brand || '').replace(/"/g, '""')}"`,
+                `"${(item.code || '').replace(/"/g, '""')}"`,
+                `"${(item.aliases || []).join(', ').replace(/"/g, '""')}"`,
             ]);
         });
         const csv = rows.map(r => r.join(',')).join('\n');
@@ -150,39 +160,55 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
         URL.revokeObjectURL(url);
     };
 
-    // --- CSV Import ---
+    // --- CSV import (3-col AND 7-col headers understood) ---
     const importCSV = (file) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target.result;
             const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-            // Skip header if present
-            const startIdx = lines[0]?.toLowerCase().includes('name') ? 1 : 0;
+            const cols = (lines[0] || '').toLowerCase().split(',');
+            const hasRichHeader = cols.includes('unit') || cols.includes('brand') || cols.includes('aliases');
+            const startIdx = cols.includes('name') ? 1 : 0;
             const newItems = [];
             for (let i = startIdx; i < lines.length; i++) {
-                // Simple CSV parse (handles quoted fields)
-                const match = lines[i].match(/(?:"([^"]*(?:""[^"]*)*)"|([^,]*))(?:,(?:"([^"]*(?:""[^"]*)*)"|([^,]*)))?(?:,(?:"([^"]*(?:""[^"]*)*)"|([^,]*)))?/);
-                if (match) {
-                    const name = (match[1] || match[2] || '').replace(/""/g, '"').trim();
-                    const category = (match[3] || match[4] || '').trim().toLowerCase();
-                    const price = parseFloat(match[5] || match[6] || '0') || 0;
-                    if (name) {
-                        newItems.push({ name, category, price });
-                    }
+                // Robust-ish CSV parse: split on commas not inside quotes
+                const parts = [];
+                let cur = '';
+                let inQ = false;
+                for (const ch of lines[i]) {
+                    if (ch === '"') inQ = !inQ;
+                    else if (ch === ',' && !inQ) { parts.push(cur); cur = ''; }
+                    else cur += ch;
                 }
+                parts.push(cur);
+                const clean = parts.map(p => p.trim().replace(/^"+|"+$/g, ''));
+                const name = clean[0];
+                if (!name) continue;
+                const item = { name, category: clean[1] || '', price: parseFloat(clean[2]) || 0 };
+                if (hasRichHeader) {
+                    item.unit = clean[3] || 'pcs';
+                    item.brand = clean[4] || '';
+                    item.code = clean[5] || '';
+                    item.aliases = parseAliases(clean[6]);
+                }
+                newItems.push(item);
             }
             if (newItems.length > 0) {
                 const mode = window.confirm(
-                    `Found ${newItems.length} items.\n\nOK = Merge with existing catalog\nCancel = Replace entire catalog`
+                    `Found ${newItems.length} items.\n\nOK = Merge with existing catalog (by name)\nCancel = Replace entire catalog`
                 );
                 if (mode) {
-                    // Merge: add only new items (by name)
                     setCatalog(prev => {
-                        const existingNames = new Set(prev.map(i => i.name.toLowerCase()));
-                        const unique = newItems.filter(i => !existingNames.has(i.name.toLowerCase()));
-                        return [...prev, ...unique];
+                        const done = [...prev];
+                        const byName = new Map(done.map(i => [i.name.toLowerCase(), i]));
+                        newItems.forEach(i => {
+                            const existing = byName.get(i.name.toLowerCase());
+                            if (existing) byName.set(i.name.toLowerCase(), { ...existing, ...i });
+                            else { done.push(i); byName.set(i.name.toLowerCase(), i); }
+                        });
+                        return done;
                     });
-                    alert(`Added ${newItems.length} item(s), duplicates skipped.`);
+                    alert(`Merged ${newItems.length} row(s) into the catalog by name.`);
                 } else {
                     setCatalog(newItems);
                     alert(`Catalog replaced with ${newItems.length} item(s).`);
@@ -193,6 +219,61 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
         };
         reader.readAsText(file);
     };
+
+    const renderEditorRow = (form, setForm, onSave, onCancel, saveLabel) => (
+        <div className="space-y-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {[['name', 'Item Name *'], ['brand', 'Brand'], ['code', 'Code'], ['category', 'Category'], ['size', 'Size'], ['colour', 'Colour'], ['price', 'Price (RM)'], ['unit', 'Unit']].map(([f, label]) => (
+                    <label key={f} className="block text-xs font-semibold text-gray-500 uppercase">
+                        {label}
+                        {f === 'category' ? (
+                            <select
+                                value={form.category}
+                                onChange={e => setForm({ ...form, category: e.target.value })}
+                                className="mt-1 w-full border rounded px-2 py-1.5 text-sm bg-white normal-case font-normal focus:ring-2 focus:ring-blue-500 outline-none"
+                            >
+                                {CATEGORIES.filter(c => c !== 'all').map(cat => (
+                                    <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                                ))}
+                                {availableCategories.filter(c => c !== 'all' && !CATEGORIES.includes(c)).map(cat => (
+                                    <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
+                                ))}
+                            </select>
+                        ) : f === 'price' || f === 'unit' ? (
+                            <input
+                                type={f === 'price' ? 'number' : 'text'}
+                                step={f === 'price' ? '0.01' : undefined}
+                                value={form[f]}
+                                onChange={e => setForm({ ...form, [f]: e.target.value })}
+                                className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm normal-case font-normal focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        ) : (
+                            <input
+                                value={form[f]}
+                                onChange={e => setForm({ ...form, [f]: e.target.value })}
+                                className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm normal-case font-normal focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        )}
+                    </label>
+                ))}
+            </div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase">
+                Aliases / Synonyms (comma-separated — used by search & smart matching)
+                <input
+                    value={form.aliases}
+                    onChange={e => setForm({ ...form, aliases: e.target.value })}
+                    placeholder="e.g. papan gypsum, drywall board"
+                    className="mt-1 w-full border rounded-lg px-3 py-2 text-sm normal-case font-normal focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+            </label>
+            <div className="flex gap-2 justify-end">
+                <button onClick={onCancel} className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-gray-600 text-sm">Cancel</button>
+                <button onClick={onSave} className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 text-sm font-semibold flex items-center gap-1.5">
+                    <Save size={15} /> {saveLabel}
+                </button>
+            </div>
+        </div>
+    );
 
     return (
         <>
@@ -205,16 +286,10 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                     </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={exportCSV}
-                        className="bg-purple-600 text-white px-4 py-2.5 rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-sm transition-colors text-sm"
-                    >
+                    <button onClick={exportCSV} className="bg-purple-600 text-white px-4 py-2.5 rounded-lg hover:bg-purple-700 flex items-center gap-2 shadow-sm transition-colors text-sm">
                         <Download size={18} /> Export CSV
                     </button>
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="bg-green-600 text-white px-4 py-2.5 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm transition-colors text-sm"
-                    >
+                    <button onClick={() => fileInputRef.current?.click()} className="bg-green-600 text-white px-4 py-2.5 rounded-lg hover:bg-green-700 flex items-center gap-2 shadow-sm transition-colors text-sm">
                         <FileUp size={18} /> Import CSV
                     </button>
                     <input
@@ -228,10 +303,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                             e.target.value = '';
                         }}
                     />
-                    <button
-                        onClick={() => setShowAddForm(true)}
-                        className="bg-blue-700 text-white px-5 py-2.5 rounded-lg hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors"
-                    >
+                    <button onClick={() => { setShowAddForm(true); setEditingId(null); }} className="bg-blue-700 text-white px-5 py-2.5 rounded-lg hover:bg-blue-800 flex items-center gap-2 shadow-sm transition-colors">
                         <Plus size={18} /> Add Item
                     </button>
                 </div>
@@ -244,19 +316,13 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                     <input
                         value={search}
                         onChange={e => setSearch(e.target.value)}
-                        placeholder="Search items by name or category..."
+                        placeholder="Search name, brand, code, alias..."
                         className="w-full border rounded-lg pl-10 pr-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                 </div>
-                <select
-                    value={categoryFilter}
-                    onChange={e => setCategoryFilter(e.target.value)}
-                    className="border rounded-lg px-4 py-2.5 text-sm bg-white min-w-[160px]"
-                >
+                <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)} className="border rounded-lg px-4 py-2.5 text-sm bg-white min-w-[160px]">
                     {availableCategories.map(cat => (
-                        <option key={cat} value={cat}>
-                            {cat === 'all' ? '📂 All Categories' : cat.charAt(0).toUpperCase() + cat.slice(1)}
-                        </option>
+                        <option key={cat} value={cat}>{cat === 'all' ? '📂 All Categories' : cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
                     ))}
                 </select>
             </div>
@@ -264,53 +330,11 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
             {/* Add item form (inline, collapsible) */}
             {showAddForm && (
                 <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 mb-5 animate-in fade-in slide-in-from-top-2">
-                    <h4 className="font-semibold text-blue-900 mb-3">Add New Item</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                        <input
-                            placeholder="Item Name *"
-                            value={addForm.name}
-                            onChange={e => setAddForm({ ...addForm, name: e.target.value })}
-                            className="border rounded-lg px-3 py-2.5 text-sm col-span-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                            autoFocus
-                            onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                        />
-                        <select
-                            value={addForm.category}
-                            onChange={e => setAddForm({ ...addForm, category: e.target.value })}
-                            className="border rounded-lg px-3 py-2.5 text-sm bg-white"
-                        >
-                            {CATEGORIES.filter(c => c !== 'all').map(cat => (
-                                <option key={cat} value={cat}>
-                                    {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                                </option>
-                            ))}
-                        </select>
-                        <div className="flex gap-2">
-                            <input
-                                placeholder="Price (RM)"
-                                type="number"
-                                step="0.01"
-                                value={addForm.price}
-                                onChange={e => setAddForm({ ...addForm, price: e.target.value })}
-                                className="border rounded-lg px-3 py-2.5 text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none"
-                                onKeyDown={e => e.key === 'Enter' && handleAdd()}
-                            />
-                            <button
-                                onClick={handleAdd}
-                                className="bg-blue-600 text-white px-4 rounded-lg hover:bg-blue-700 transition-colors"
-                                title="Add Item"
-                            >
-                                <Check size={18} />
-                            </button>
-                            <button
-                                onClick={() => { setShowAddForm(false); setAddForm({ name: '', category: 'hardware', price: '' }); }}
-                                className="border rounded-lg px-3 hover:bg-gray-100 transition-colors"
-                                title="Cancel"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-                    </div>
+                    <h4 className="font-semibold text-blue-900 mb-3 flex items-center justify-between">
+                        Add New Item
+                        <button onClick={() => { setShowAddForm(false); setAddForm(EMPTY_FORM); }} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>
+                    </h4>
+                    {renderEditorRow(addForm, setAddForm, handleAdd, () => { setShowAddForm(false); setAddForm(EMPTY_FORM); }, 'Add Item')}
                 </div>
             )}
 
@@ -320,23 +344,17 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="bg-gray-50 border-b">
-                                <th className="text-left px-4 py-3 font-semibold text-gray-700 w-12">#</th>
-                                <th
-                                    className="text-left px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none"
-                                    onClick={() => toggleSort('name')}
-                                >
+                                <th className="text-left px-4 py-3 font-semibold text-gray-700 w-10">#</th>
+                                <th className="text-left px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none w-10" onClick={() => toggleSort('unit')}>
+                                    U {sortIcon('unit')}
+                                </th>
+                                <th className="text-left px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none" onClick={() => toggleSort('name')}>
                                     Item Name {sortIcon('name')}
                                 </th>
-                                <th
-                                    className="text-left px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none w-40"
-                                    onClick={() => toggleSort('category')}
-                                >
+                                <th className="text-left px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none w-36" onClick={() => toggleSort('category')}>
                                     Category {sortIcon('category')}
                                 </th>
-                                <th
-                                    className="text-right px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none w-32"
-                                    onClick={() => toggleSort('price')}
-                                >
+                                <th className="text-right px-4 py-3 font-semibold text-gray-700 cursor-pointer hover:text-blue-600 select-none w-28" onClick={() => toggleSort('price')}>
                                     Price (RM) {sortIcon('price')}
                                 </th>
                                 <th className="text-center px-4 py-3 font-semibold text-gray-700 w-28">Actions</th>
@@ -345,7 +363,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                         <tbody>
                             {filteredItems.length === 0 ? (
                                 <tr>
-                                    <td colSpan={5} className="px-4 py-12 text-center text-gray-500">
+                                    <td colSpan={6} className="px-4 py-12 text-center text-gray-500">
                                         <Package size={48} className="mx-auto mb-3 text-gray-300" />
                                         <p className="text-lg font-medium">No items found</p>
                                         <p className="text-sm mt-1">Try adjusting your search or add a new item.</p>
@@ -353,103 +371,42 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                                 </tr>
                             ) : (
                                 filteredItems.map((item, idx) => (
-                                    <tr
-                                        key={`${item.name}-${idx}`}
-                                        className={`border-b last:border-b-0 hover:bg-gray-50 transition-colors ${editingId === idx ? 'bg-yellow-50' : ''}`}
-                                    >
-                                        <td className="px-4 py-2.5 text-gray-400 text-xs">{idx + 1}</td>
-
-                                        {editingId === idx ? (
-                                            <>
-                                                <td className="px-4 py-2">
-                                                    <input
-                                                        value={editForm.name}
-                                                        onChange={e => setEditForm({ ...editForm, name: e.target.value })}
-                                                        className="w-full border rounded px-2 py-1.5 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                                                        autoFocus
-                                                        onKeyDown={e => {
-                                                            if (e.key === 'Enter') saveEdit(idx);
-                                                            if (e.key === 'Escape') cancelEdit();
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-2">
-                                                    <select
-                                                        value={editForm.category}
-                                                        onChange={e => setEditForm({ ...editForm, category: e.target.value })}
-                                                        className="w-full border rounded px-2 py-1.5 text-sm bg-white"
-                                                    >
-                                                        {availableCategories.filter(c => c !== 'all').map(cat => (
-                                                            <option key={cat} value={cat}>
-                                                                {cat.charAt(0).toUpperCase() + cat.slice(1)}
-                                                            </option>
-                                                        ))}
-                                                    </select>
-                                                </td>
-                                                <td className="px-4 py-2">
-                                                    <input
-                                                        type="number"
-                                                        step="0.01"
-                                                        value={editForm.price}
-                                                        onChange={e => setEditForm({ ...editForm, price: e.target.value })}
-                                                        className="w-full border rounded px-2 py-1.5 text-sm text-right focus:ring-2 focus:ring-blue-500 outline-none"
-                                                        onKeyDown={e => {
-                                                            if (e.key === 'Enter') saveEdit(idx);
-                                                            if (e.key === 'Escape') cancelEdit();
-                                                        }}
-                                                    />
-                                                </td>
-                                                <td className="px-4 py-2 text-center">
-                                                    <div className="flex justify-center gap-1">
-                                                        <button
-                                                            onClick={() => saveEdit(idx)}
-                                                            className="text-green-600 hover:bg-green-50 p-1.5 rounded transition-colors"
-                                                            title="Save"
-                                                        >
-                                                            <Check size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={cancelEdit}
-                                                            className="text-gray-500 hover:bg-gray-100 p-1.5 rounded transition-colors"
-                                                            title="Cancel"
-                                                        >
-                                                            <X size={16} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <td className="px-4 py-2.5 font-medium text-gray-800">{item.name}</td>
-                                                <td className="px-4 py-2.5">
-                                                    <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs rounded-full capitalize">
-                                                        {item.category || '—'}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-2.5 text-right font-mono text-gray-700">
-                                                    {item.price != null ? `RM ${parseFloat(item.price).toFixed(2)}` : '—'}
-                                                </td>
-                                                <td className="px-4 py-2.5 text-center">
-                                                    <div className="flex justify-center gap-1">
-                                                        <button
-                                                            onClick={() => startEdit(item, idx)}
-                                                            className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit2 size={15} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => deleteItem(idx)}
-                                                            className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={15} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </>
-                                        )}
-                                    </tr>
+                                    editingId === item ? (
+                                        <tr key={`${item.name}-${idx}`} className="bg-yellow-50">
+                                            <td colSpan={6} className="px-4 py-4">
+                                                {renderEditorRow(editForm, setEditForm, () => saveEdit(item), cancelEdit, 'Save Changes')}
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        <tr key={`${item.name}-${idx}`} className="border-b last:border-b-0 hover:bg-gray-50 transition-colors">
+                                            <td className="px-4 py-2.5 text-gray-400 text-xs">{idx + 1}</td>
+                                            <td className="px-4 py-2.5 text-gray-500 text-xs font-mono">{item.unit || 'pcs'}</td>
+                                            <td className="px-4 py-2.5">
+                                                <p className="font-medium text-gray-800">{item.name}</p>
+                                                {(item.brand || item.code || item.size || item.colour || (item.aliases?.length)) ? (
+                                                    <p className="text-[11px] text-gray-400">
+                                                        {[item.brand, item.code, item.size ? `sz ${item.size}` : '', item.colour]
+                                                            .filter(Boolean).join(' · ')}
+                                                        {item.aliases?.length ? ` · alias: ${item.aliases.join(', ')}` : ''}
+                                                    </p>
+                                                ) : null}
+                                            </td>
+                                            <td className="px-4 py-2.5">
+                                                <span className="px-2.5 py-1 bg-blue-50 text-blue-700 text-xs rounded-full capitalize">{item.category || '—'}</span>
+                                            </td>
+                                            <td className="px-4 py-2.5 text-right font-mono text-gray-700">{item.price != null ? `RM ${parseFloat(item.price).toFixed(2)}` : '—'}</td>
+                                            <td className="px-4 py-2.5 text-center">
+                                                <div className="flex justify-center gap-1">
+                                                    <button onClick={() => startEdit(item)} className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors" title="Edit">
+                                                        <Edit2 size={15} />
+                                                    </button>
+                                                    <button onClick={() => deleteItem(item)} className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors" title="Delete">
+                                                        <Trash2 size={15} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )
                                 ))
                             )}
                         </tbody>
@@ -460,9 +417,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                 {filteredItems.length > 0 && (
                     <div className="bg-gray-50 border-t px-4 py-3 flex justify-between items-center text-sm text-gray-600">
                         <span>Showing {filteredItems.length} of {catalog.length} items</span>
-                        <span className="font-medium">
-                            Avg price: RM {(filteredItems.reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0) / filteredItems.length).toFixed(2)}
-                        </span>
+                        <span className="font-medium">Avg price: RM {(filteredItems.reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0) / filteredItems.length).toFixed(2)}</span>
                     </div>
                 )}
             </div>

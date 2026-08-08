@@ -275,17 +275,25 @@ export const getSubById = (main, subId) => {
 
 /**
  * Classify one flat catalog item into { mainId, subId } using keyword + legacy
- * matching. Falls back to the legacy category's default sub so nothing is lost.
+ * matching. Also scores the item's `aliases` and `subLabel`-style synonyms so a
+ * user-added "Papan Gypsum" still lands in the Gypsum sub. Falls back to the
+ * legacy category's default sub so nothing is ever stranded.
  */
 const classifyItem = (item) => {
     const name = toKey(item.name);
     const legacy = toKey(item.category);
+    const aliases = (Array.isArray(item.aliases) ? item.aliases : [])
+        .concat(item.keyword ? [item.keyword] : [])
+        .map(toKey)
+        .filter(Boolean);
 
-    // Pass 1 — strongest signal: keyword match on the item name against any
+    const searchable = [name, ...aliases];
+
+    // Pass 1 — strongest signal: keyword match on name OR aliases against any
     // sub-category, scanned across all mains in category order.
     for (const main of CATEGORY_TREE) {
         for (const sub of main.subs) {
-            if (sub.keywords.some(k => name.includes(toKey(k)))) {
+            if (sub.keywords.some(k => searchable.some(s => s.includes(toKey(k))))) {
                 return { mainId: main.id, subId: sub.id };
             }
         }
@@ -324,6 +332,12 @@ export const buildCatalogHierarchy = (flatCatalog) => {
                 category: item.category || main.label,
                 mainLabel: main.label,
                 subLabel: target.label,
+                unit: item.unit || 'pcs',
+                brand: item.brand || '',
+                code: item.code || '',
+                size: item.size || '',
+                colour: item.colour || '',
+                aliases: Array.isArray(item.aliases) ? item.aliases : [],
             });
         });
 

@@ -31,12 +31,16 @@ const makeMaterial = (item, qty) => ({
     category: item.mainLabel || item.category || 'Materials',
     item: item.name,
     quantity: qty,
-    unit: 'pcs',
+    unit: item.unit || 'pcs',
     pricePerUnit: Number(item.price) || 0,
     price: qty * (Number(item.price) || 0),
     total: qty * (Number(item.price) || 0),
     fromCatalog: true,
     catalogSub: item.subLabel || '',
+    brand: item.brand || '',
+    code: item.code || '',
+    size: item.size || '',
+    colour: item.colour || '',
 });
 
 /**
@@ -48,8 +52,13 @@ const ItemCard = ({ item, qty, onMinus, onPlus, onSetOne, onPreset }) => {
     return (
         <div className={`border rounded-xl p-3 flex flex-col gap-2 bg-white transition-colors ${qty > 0 ? 'border-green-400 ring-2 ring-green-100' : 'border-gray-200'}`}>
             <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 min-h-[2.5rem]">{item.name}</p>
+            {item.brand || item.code ? (
+                <span className="text-[11px] text-gray-400 font-medium uppercase tracking-wide">
+                    {[item.brand, item.code].filter(Boolean).join(' · ')}
+                </span>
+            ) : null}
             <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded self-start">
-                {price ? `${formatCurrency(price)} / pcs` : 'No price'}
+                {price ? `${formatCurrency(price)} / ${item.unit || 'pcs'}` : 'No price'}
             </span>
 
             <div className="flex items-center gap-1.5 mt-auto pt-1">

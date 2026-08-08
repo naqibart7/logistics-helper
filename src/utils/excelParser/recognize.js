@@ -44,15 +44,17 @@ export const recognizeMaterial = (itemText, flatCatalog, ctx = {}) => {
     for (const c of flatCatalog) {
         const catName = keyOf(c.name);
         if (catName === '') continue;
-        let conf = overlapScore(query, catName);
-        // Substring hit is a strong signal.
-        if (catName.includes(query) || query.includes(catName)) conf = Math.max(conf, 0.85);
+        const candidates = [catName, ...(Array.isArray(c.aliases) ? c.aliases : []).map(keyOf).filter(Boolean)];
+        let conf = 0;
+        for (const cand of candidates) conf = Math.max(conf, overlapScore(query, cand));
+        // Substring hit is a strong signal (name OR alias).
+        if (candidates.some(cand => cand.includes(query) || query.includes(cand))) conf = Math.max(conf, 0.85);
         // Category agreement with the section name adds a small boost.
         const catKey = keyOf(c.category || '');
         if (sectionKey && catKey && catKey !== '' && sectionKey.includes(catKey.slice(0, 4))) conf = Math.min(1, conf + 0.05);
         if (conf > best.confidence) {
             // Only accept when the overlap is meaningful (>0.35) OR exact phrase.
-            if (conf >= 0.35 || query.includes(catName)) {
+            if (conf >= 0.35 || candidates.some(cand => query.includes(cand))) {
                 best = { name: c.name, price: Number(c.price) || 0, category: c.category, confidence: conf, hit: 'catalog' };
             }
         }
