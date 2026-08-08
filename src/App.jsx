@@ -8,6 +8,7 @@ import { exportChecklistToPDF } from './utils/pdfChecklist';
 import { exportBOMToPDF, exportPOToPDF } from './utils/pdfExport';
 import { parseExcelCostFile } from './utils/excelParser';
 import { parseExcelV2 } from './utils/excelParser/index.js';
+import { observeSupplierImport } from './utils/catalogLearning';
 import { formatCurrency } from './utils/pdfParser';
 import { smartParse, smartParseTabular } from './utils/advancedParser';
 import { extractTabularData } from './utils/pdfExtractor';
@@ -27,6 +28,7 @@ import EditableBOMTable from './components/EditableBOMTable';
 import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
 import ItemDatabase from './components/ItemDatabase';
+import CatalogTab from './components/CatalogTab';
 import MondayEntryGenerator from './components/MondayEntryGenerator';
 import { AutocompleteItemInput } from './components/AutocompleteItemInput';
 import { standardCatalog } from './data/standardCatalog';
@@ -269,6 +271,13 @@ const LogisticsSystem = () => {
                 }
                 result.rawText = result.rawText || `Excel Import: ${file.name}`;
                 result.ocrMethod = 'excel';
+                if (result.materials?.length) {
+                    observeSupplierImport({
+                        catalog: itemCatalog || [],
+                        supplier: result.metadata?.supplier || file.name.replace(/\.[^/.]+$/, ''),
+                        materials: result.materials,
+                    });
+                }
             } else {
                 // PDF → smart path: fast pdfjs detection first, then OCR backend for scanned docs
                 const extracted = await extractTextSmart(file, { onStatus: setProcessingStep });
@@ -711,6 +720,13 @@ const LogisticsSystem = () => {
                                 }`}
                         >
                             <Database size={20} /> Suppliers
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('catalog')}
+                            className={`py-4 px-3 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'catalog' ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'
+                                }`}
+                        >
+                            <FileSpreadsheet size={20} /> Catalog
                         </button>
                         <button
                             onClick={() => setActiveTab('items')}
@@ -1560,6 +1576,15 @@ const LogisticsSystem = () => {
                             </div>
                         </Modal>
                     </>
+                )}
+
+                {activeTab === 'catalog' && (
+                    <CatalogTab
+                        catalog={itemCatalog}
+                        setCatalog={setItemCatalog}
+                        projects={projects}
+                        suppliers={suppliers}
+                    />
                 )}
 
                 {activeTab === 'items' && (
