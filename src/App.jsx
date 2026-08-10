@@ -38,6 +38,7 @@ import SuggestedSuppliers from './components/SuggestedSuppliers';
 import { List, ClipboardList } from 'lucide-react';
 import PublicDashboard from './components/PublicDashboard';
 import CatalogPicker from './components/CatalogPicker';
+import BomPredictorPanel from './components/BomPredictorPanel';
 import QuotesTracker from './components/QuotesTracker';
 
 const generateSafeId = () => {
@@ -1142,6 +1143,18 @@ const LogisticsSystem = () => {
                                                     <Plus size={20} />
                                                 </button>
                                             </div>
+
+                                            <BomPredictorPanel
+                                                draft={projectForm.materials}
+                                                catalog={itemCatalog}
+                                                history={projects}
+                                                onAdd={(material) => {
+                                                    setProjectForm(prev => ({
+                                                        ...prev,
+                                                        materials: [...prev.materials, { ...material, id: generateSafeId() }]
+                                                    }));
+                                                }}
+                                            />
 
                                             <EditableBOMTable
                                                 materials={projectForm.materials}
