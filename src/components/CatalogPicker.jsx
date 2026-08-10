@@ -18,6 +18,9 @@ import {
 import { generateId } from '../utils/helpers';
 import { formatCurrency } from '../utils/pdfParser';
 import { buildCatalogHierarchy, flattenHierarchy, resolveKit, QUICK_KITS } from '../data/catalogHierarchy';
+import { getCatalogInsights } from '../utils/catalogLearning';
+
+const learnKey = (s) => String(s || '').toLowerCase();
 
 const ICONS = {
     Layers, Package, LayoutGrid, PaintRoller, Hammer, Lightbulb, Droplets,
@@ -47,8 +50,9 @@ const makeMaterial = (item, qty) => ({
  * One catalog item card (hoisted to module scope so the picker never remounts
  * it — defining components inside render creates a new type each render).
  */
-const ItemCard = ({ item, qty, onMinus, onPlus, onSetOne, onPreset }) => {
+const ItemCard = ({ item, qty, learn, onMinus, onPlus, onSetOne, onPreset }) => {
     const price = Number(item.price) || 0;
+    const cheaper = learn && learn.best && learn.best > 0 && (price === 0 || learn.best < price);
     return (
         <div className={`border rounded-xl p-3 flex flex-col gap-2 bg-white transition-colors ${qty > 0 ? 'border-green-400 ring-2 ring-green-100' : 'border-gray-200'}`}>
             <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 min-h-[2.5rem]">{item.name}</p>
@@ -57,9 +61,16 @@ const ItemCard = ({ item, qty, onMinus, onPlus, onSetOne, onPreset }) => {
                     {[item.brand, item.code].filter(Boolean).join(' · ')}
                 </span>
             ) : null}
-            <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded self-start">
-                {price ? `${formatCurrency(price)} / ${item.unit || 'pcs'}` : 'No price'}
-            </span>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
+                    {price ? `${formatCurrency(price)} / ${item.unit || 'pcs'}` : 'No price'}
+                </span>
+                {learn && learn.best > 0 && (
+                    <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${cheaper ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
+                        Best seen {formatCurrency(learn.best)}{cheaper ? ' ↓' : ''} · {learn.count}×
+                    </span>
+                )}
+            </div>
 
             <div className="flex items-center gap-1.5 mt-auto pt-1">
                 <button
@@ -146,6 +157,11 @@ const CustomItemForm = ({ mainLabel, subLabel, onAdd }) => {
 const CatalogPicker = ({ catalog, onAdd }) => {
     const hierarchy = useMemo(() => buildCatalogHierarchy(catalog), [catalog]);
     const flatItems = useMemo(() => flattenHierarchy(hierarchy), [hierarchy]);
+    const learns = useMemo(() => {
+        const map = {};
+        getCatalogInsights().forEach(i => { map[learnKey(i.name)] = i; });
+        return map;
+    }, []);
 
     const [search, setSearch] = useState('');
     const [mainId, setMainId] = useState(null);
@@ -248,6 +264,7 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                                         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                                             {items.map(i => (
                                                 <ItemCard key={i.key} item={i} qty={cart[i.key]?.qty || 0}
+                                                    learn={learns[learnKey(i.name)]}
                                                     onMinus={() => bump(i, -1)} onPlus={() => bump(i, 1)}
                                                     onSetOne={() => setPreset(i, (cart[i.key]?.qty || 0) + 1)} onPreset={(p) => setPreset(i, p)} />
                                             ))}
@@ -265,6 +282,7 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                             <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                                 {activeSub.items.map(item => (
                                     <ItemCard key={item.key} item={item} qty={cart[item.key]?.qty || 0}
+                                        learn={learns[learnKey(item.name)]}
                                         onMinus={() => bump(item, -1)} onPlus={() => bump(item, 1)}
                                         onSetOne={() => setPreset(item, (cart[item.key]?.qty || 0) + 1)} onPreset={(p) => setPreset(item, p)} />
                                 ))}
