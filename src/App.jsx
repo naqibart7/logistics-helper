@@ -1371,16 +1371,31 @@ const LogisticsSystem = () => {
                                                 projectName={selectedProject.name}
                                             />
                                         ) : ['Quotes Received', 'Orders Placed', 'Completed'].includes(selectedProject.status) ? (
-                                            <SupplierTrackedBOM
-                                                materials={selectedProject.materials}
-                                                suppliers={suppliers}
-                                                onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
-                                                onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
-                                                onBulkUpdate={(updates) => bulkUpdateProjectMaterials(selectedProject.id, updates)}
-                                                showPrices={true}
-                                            />
+                                            <>
+                                                <BomPredictorPanel
+                                                    draft={selectedProject.materials}
+                                                    catalog={itemCatalog}
+                                                    history={projects}
+                                                    onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
+                                                />
+                                                <SupplierTrackedBOM
+                                                    materials={selectedProject.materials}
+                                                    suppliers={suppliers}
+                                                    onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
+                                                    onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
+                                                    onBulkUpdate={(updates) => bulkUpdateProjectMaterials(selectedProject.id, updates)}
+                                                    showPrices={true}
+                                                />
+                                            </>
                                         ) : (
-                                            <EditableBOMTable
+                                            <>
+                                                <BomPredictorPanel
+                                                    draft={selectedProject.materials}
+                                                    catalog={itemCatalog}
+                                                    history={projects}
+                                                    onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
+                                                />
+                                                <EditableBOMTable
                                                 materials={selectedProject.materials}
                                                 onUpdate={(id, updates) => updateProjectMaterial(selectedProject.id, id, updates)}
                                                 onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
@@ -1388,6 +1403,7 @@ const LogisticsSystem = () => {
                                                 showPrices={true}
                                                 catalog={itemCatalog}
                                             />
+                                            </>
                                         )}
                                     </div>
 
