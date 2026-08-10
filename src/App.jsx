@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef } from 'react';
-import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check, RefreshCw } from 'lucide-react';
+import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId, searchFilter } from './utils/helpers';
 import { exportBOMToCSV } from './utils/csvExport';
@@ -9,6 +9,8 @@ import { exportBOMToPDF, exportPOToPDF } from './utils/pdfExport';
 import { parseExcelCostFile } from './utils/excelParser';
 import { parseExcelV2 } from './utils/excelParser/index.js';
 import { observeSupplierImport } from './utils/catalogLearning';
+import { addToReviewQueue, reviewQueueCount } from './utils/reviewQueue';
+import ReviewQueue from './components/ReviewQueue';
 import { formatCurrency } from './utils/pdfParser';
 import { smartParse, smartParseTabular } from './utils/advancedParser';
 import { extractTabularData } from './utils/pdfExtractor';
@@ -48,6 +50,8 @@ const LogisticsSystem = () => {
     const [suppliers, setSuppliers] = useSupabaseSuppliers();
     const [itemCatalog, setItemCatalog] = useSyncedState(STORAGE_KEYS.ITEM_CATALOG, standardCatalog);
     const [showAuth, setShowAuth] = useState(false);
+    const [reviewCount, setReviewCount] = useState(() => reviewQueueCount());
+    const [importSummary, setImportSummary] = useState(null);
 
     // Migration: Ensure all projects have IDs
     React.useEffect(() => {
@@ -306,6 +310,22 @@ const LogisticsSystem = () => {
             setPreviewData(result);
             setImportMode('preview');
             setParseMetadata(result.metadata);
+
+            // Diff report + human-in-the-loop: park out-of-distribution rows.
+            const supplierName = result.metadata?.supplier || file.name.replace(/\.[^/.]+$/, '');
+            const lowRows = (result.lowConfidence || []).map(r => ({
+                item: r.item, original: r.original || r.item,
+                supplier: supplierName, confidence: r.confidence, source: 'excel-v2',
+            }));
+            const queueAdded = addToReviewQueue(lowRows);
+            setReviewCount(reviewQueueCount());
+            setImportSummary({
+                source: result.format || (fileName.endsWith('.pdf') ? 'PDF' : 'File'),
+                added: result.materials?.length || 0,
+                low: lowRows.length,
+                queueAdded,
+                supplier: supplierName,
+            });
         } catch (error) {
             console.error('File Processing Error:', error);
             const msg = error.message || 'Unknown error';
@@ -729,6 +749,18 @@ const LogisticsSystem = () => {
                             <FileSpreadsheet size={20} /> Catalog
                         </button>
                         <button
+                            onClick={() => setActiveTab('review')}
+                            className={`relative py-4 px-3 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'review' ? 'border-amber-500 text-amber-600' : 'border-transparent text-gray-600 hover:text-gray-800'
+                                }`}
+                        >
+                            <AlertTriangle size={20} /> Review
+                            {reviewCount > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">
+                                    {reviewCount > 99 ? '99+' : reviewCount}
+                                </span>
+                            )}
+                        </button>
+                        <button
                             onClick={() => setActiveTab('items')}
                             className={`py-4 px-3 font-medium flex items-center gap-2 border-b-2 transition-colors ${activeTab === 'items' ? 'border-blue-700 text-blue-700' : 'border-transparent text-gray-600 hover:text-gray-800'
                                 }`}
@@ -747,6 +779,44 @@ const LogisticsSystem = () => {
             </div>
 
             <div className="max-w-7xl mx-auto p-6">
+                {importSummary && (
+                    <div className="bg-white border border-gray-200 rounded-xl px-5 py-4 mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                        <div className="flex items-center gap-3">
+                            <span className="w-9 h-9 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                                <FileSpreadsheet size={18} />
+                            </span>
+                            <div>
+                                <p className="font-semibold text-gray-800">Import complete — {importSummary.source}</p>
+                                <p className="text-sm text-gray-500">
+                                    {importSummary.added} parsed
+                                    <span className="mx-1.5">·</span>
+                                    {importSummary.low} low-confidence
+                                    {importSummary.queueAdded > 0 && (` → ${importSummary.queueAdded} sent to Needs Review`)}
+                                    <span className="mx-1.5">·</span>
+                                    supplier: {importSummary.supplier}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {importSummary.queueAdded > 0 && (
+                                <button
+                                    onClick={() => setActiveTab('review')}
+                                    className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600"
+                                >
+                                    Review {importSummary.queueAdded}
+                                </button>
+                            )}
+                            <button
+                                onClick={() => setImportSummary(null)}
+                                className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50"
+                                aria-label="Dismiss import summary"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 {activeTab === 'projects' && (
                     <>
                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
@@ -1585,6 +1655,10 @@ const LogisticsSystem = () => {
                         projects={projects}
                         suppliers={suppliers}
                     />
+                )}
+
+                {activeTab === 'review' && (
+                    <ReviewQueue onChange={() => setReviewCount(reviewQueueCount())} />
                 )}
 
                 {activeTab === 'items' && (

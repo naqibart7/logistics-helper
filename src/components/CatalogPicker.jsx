@@ -52,7 +52,13 @@ const makeMaterial = (item, qty) => ({
  */
 const ItemCard = ({ item, qty, learn, onMinus, onPlus, onSetOne, onPreset }) => {
     const price = Number(item.price) || 0;
-    const cheaper = learn && learn.best && learn.best > 0 && (price === 0 || learn.best < price);
+    const variantLabel = [item.size, item.colour].filter(Boolean).join(' · ');
+    const variant = learn && variantLabel
+        ? (learn.variants || []).find(v => v.label === variantLabel)
+        : null;
+    const best = (variant && variant.best) || (learn && learn.best) || 0;
+    const seen = (variant && variant.count) || (learn && learn.count) || 0;
+    const cheaper = best > 0 && (price === 0 || best < price);
     return (
         <div className={`border rounded-xl p-3 flex flex-col gap-2 bg-white transition-colors ${qty > 0 ? 'border-green-400 ring-2 ring-green-100' : 'border-gray-200'}`}>
             <p className="text-sm font-medium text-gray-800 leading-snug line-clamp-2 min-h-[2.5rem]">{item.name}</p>
@@ -65,9 +71,9 @@ const ItemCard = ({ item, qty, learn, onMinus, onPlus, onSetOne, onPreset }) => 
                 <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded">
                     {price ? `${formatCurrency(price)} / ${item.unit || 'pcs'}` : 'No price'}
                 </span>
-                {learn && learn.best > 0 && (
+                {best > 0 && (
                     <span className={`text-[11px] font-semibold px-1.5 py-0.5 rounded ${cheaper ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}`}>
-                        Best seen {formatCurrency(learn.best)}{cheaper ? ' ↓' : ''} · {learn.count}×
+                        Best seen {formatCurrency(best)}{cheaper ? ' ↓' : ''} · {seen}×
                     </span>
                 )}
             </div>
