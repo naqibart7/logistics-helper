@@ -45,6 +45,17 @@ const CatalogTab = ({ catalog, setCatalog, projects, suppliers }) => {
         .sort((a, b) => b.count - a.count || (b.last - a.last))
         .slice(0, 60);
 
+    const stats = useMemo(() => {
+        const observations = insights.reduce((s, i) => s + (Number(i.count) || 0), 0);
+        const supplierSet = new Set();
+        insights.forEach(i => (i.suppliers || []).forEach(s => supplierSet.add(s.name)));
+        return {
+            items: insights.length,
+            observations,
+            suppliers: supplierSet.size,
+        };
+    }, [insights]);
+
     return (
         <div className="space-y-6">
             {/* Learning header */}
@@ -66,6 +77,22 @@ const CatalogTab = ({ catalog, setCatalog, projects, suppliers }) => {
                     <RefreshCw size={16} /> Rescan projects & suppliers
                 </button>
             </div>
+
+            {/* Observed-learning counters */}
+            {stats.items > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {[
+                        { label: 'Items with learned data', value: stats.items },
+                        { label: 'Price observations', value: stats.observations },
+                        { label: 'Suppliers tracked', value: stats.suppliers },
+                    ].map(s => (
+                        <div key={s.label} className="bg-white rounded-xl border px-4 py-3 flex items-center justify-between">
+                            <span className="text-xs font-medium text-gray-500">{s.label}</span>
+                            <span className="text-xl font-black text-teal-700">{s.value}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Learned price intelligence */}
             {sortedInsights.length > 0 && (
@@ -92,7 +119,21 @@ const CatalogTab = ({ catalog, setCatalog, projects, suppliers }) => {
                             <tbody>
                                 {sortedInsights.map(ins => (
                                     <tr key={ins.key} className="border-b last:border-b-0 hover:bg-gray-50">
-                                        <td className="px-4 py-2 font-medium text-gray-800 max-w-[22rem] truncate">{ins.name}</td>
+                                        <td className="px-4 py-2 font-medium text-gray-800 max-w-[22rem]">
+                                            <div className="truncate">{ins.name}</div>
+                                            {ins.variants && ins.variants.length > 0 && (
+                                                <div className="mt-0.5 space-y-0.5">
+                                                    {ins.variants
+                                                        .filter(v => v.label && v.label !== '_')
+                                                        .slice(0, 2)
+                                                        .map((v, vi) => (
+                                                            <div key={vi} className="text-[11px] text-gray-400">
+                                                                {v.label}: {v.best ? `${formatCurrency(v.best)} · ${v.count}×` : `${v.count}×`}
+                                                            </div>
+                                                        ))}
+                                                </div>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-2 text-right text-gray-600">{ins.count}</td>
                                         <td className="px-4 py-2 text-right font-mono text-teal-700 font-semibold">
                                             {formatCurrency(ins.best)}{ins.unit ? ` / ${ins.unit}` : ''}
