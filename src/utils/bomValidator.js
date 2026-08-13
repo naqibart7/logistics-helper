@@ -21,7 +21,8 @@ const keyOf = (s) => String(s || '').toLowerCase();
 /** Catalog item that recognizes a raw text; null when out-of-distribution. */
 const catOf = (name, catalog, section) => {
     const m = recognizeMaterial(name, catalog, { section: section || '' });
-    return m && m.hit === 'catalog' ? { name: m.name, m } : null;
+    if (!m || m.hit !== 'catalog') return null;
+    return (catalog || []).find(x => x.name === m.name) || { name: m.name, m };
 };
 
 /* ── Dependency Graph G (catalog-filtered accessory rules) ─────────────────── */
@@ -65,7 +66,11 @@ const wasteOf = (name) => {
 /** Best-effort pack size P from unit + name. Continuous units → NaN (skip). */
 const DISCRETE_UNITS = new Set(['pcs', 'piece', 'pieces', 'no', 'pc', 'box', 'bag', 'pack', 'roll', 'rolls', 'set', 'unit', 'carton']);
 const CONTAINER_UNITS = new Set(['box', 'bag', 'pack', 'roll', 'rolls', 'set', 'carton']);
-const packOf = (itemName, unit) => {
+const packOf = (itemName, unit, item) => {
+    // A supplier-declared packSize always wins (overrides unit heuristics).
+    if (item && Number.isFinite(Number(item.packSize)) && Number(item.packSize) > 0) {
+        return Math.max(1, Math.round(Number(item.packSize)));
+    }
     const u = keyOf(unit || 'pcs');
     if (!DISCRETE_UNITS.has(u)) return NaN; // continuous unit — quantization ignored
     if (CONTAINER_UNITS.has(u)) return 1;   // a box/bag/roll is already one order unit
@@ -82,7 +87,10 @@ const COVERAGE = [
     { kw: /(tile grout|grout)/i, m2PerUnit: 8, unitHint: 'bag' },
     { kw: /(joint compound|compound)/i, m2PerUnit: 8, unitHint: 'bag' },
 ];
-const coverageOf = (name) => {
+const coverageOf = (name, item) => {
+    if (item && Number.isFinite(Number(item.coverage)) && Number(item.coverage) > 0) {
+        return { m2PerUnit: Number(item.coverage), unitHint: item.unit || '', fromItem: true };
+    }
     const hit = COVERAGE.find(r => r.kw.test(name));
     return hit ? hit : null;
 };
@@ -173,7 +181,7 @@ export const validateDraft = (draft = [], catalog = [], ctx = {}) => {
     for (const { r, c } of resolved) {
         const q = Number(r.quantity) || Number(r.qty);
         if (!Number.isFinite(q) || q <= 0) continue;
-        const P = packOf(c.name, r.unit);
+        const P = packOf(c.name, r.unit, c);
         if (!Number.isFinite(P)) continue; // continuous unit — skip
         const W = wasteOf(c.name);
         const final = Math.ceil((q * (1 + W)) / P) * P;
@@ -230,7 +238,7 @@ export const validateDraft = (draft = [], catalog = [], ctx = {}) => {
     const area = detectArea(rows, ctx.area);
     if (area > 0) {
         for (const { r, c } of resolved) {
-            const cov = coverageOf(c.name);
+            const cov = coverageOf(c.name, c);
             if (!cov) continue;
             const q = Number(r.quantity) || Number(r.qty);
             if (!Number.isFinite(q) || q <= 0) continue;

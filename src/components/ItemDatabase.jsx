@@ -6,7 +6,7 @@ const CATEGORIES = [
     'wainscotting', 'fastener', 'plumbing', 'tools', 'other'
 ];
 
-const EMPTY_FORM = { name: '', category: 'hardware', price: '', unit: 'pcs', brand: '', code: '', size: '', colour: '', aliases: '' };
+const EMPTY_FORM = { name: '', category: 'hardware', price: '', unit: 'pcs', brand: '', code: '', size: '', colour: '', aliases: '', coverage: '', packSize: '' };
 
 /** Split a comma-separated alias string into a clean array of lowercase tokens. */
 const parseAliases = (raw) => (raw || '')
@@ -27,6 +27,8 @@ const buildItem = (form, base = {}) => ({
     size: (form.size || '').trim(),
     colour: (form.colour || '').trim(),
     aliases: parseAliases(form.aliases),
+    coverage: parseFloat(form.coverage) || null,
+    packSize: parseFloat(form.packSize) || null,
 });
 
 const ItemDatabase = ({ catalog, setCatalog }) => {
@@ -117,6 +119,8 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
             size: item.size || '',
             colour: item.colour || '',
             aliases: (item.aliases || []).join(', '),
+            coverage: item.coverage ?? '',
+            packSize: item.packSize ?? '',
         });
     };
 
@@ -138,7 +142,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
 
     // --- CSV Export (richer columns; 3-col legacy import still works) ---
     const exportCSV = () => {
-        const rows = [['Name', 'Category', 'Price', 'Unit', 'Brand', 'Code', 'Aliases']];
+        const rows = [['Name', 'Category', 'Price', 'Unit', 'Brand', 'Code', 'Aliases', 'Coverage', 'Pack size']];
         catalog.forEach(item => {
             rows.push([
                 `"${(item.name || '').replace(/"/g, '""')}"`,
@@ -148,6 +152,8 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                 `"${(item.brand || '').replace(/"/g, '""')}"`,
                 `"${(item.code || '').replace(/"/g, '""')}"`,
                 `"${(item.aliases || []).join(', ').replace(/"/g, '""')}"`,
+                item.coverage ?? '',
+                item.packSize ?? '',
             ]);
         });
         const csv = rows.map(r => r.join(',')).join('\n');
@@ -168,8 +174,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
             const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
             const cols = (lines[0] || '').toLowerCase().split(',');
             const hasRichHeader = cols.includes('unit') || cols.includes('brand') || cols.includes('aliases');
-            const startIdx = cols.includes('name') ? 1 : 0;
-            const newItems = [];
+            const startIdx = cols.includes('name') ? 1 : 0;            const newItems = [];
             for (let i = startIdx; i < lines.length; i++) {
                 // Robust-ish CSV parse: split on commas not inside quotes
                 const parts = [];
@@ -190,6 +195,8 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                     item.brand = clean[4] || '';
                     item.code = clean[5] || '';
                     item.aliases = parseAliases(clean[6]);
+                    if (cols.includes('coverage')) item.coverage = parseFloat(clean[7]) || null;
+                    if (cols.includes('pack size') || cols.includes('packsize')) item.packSize = parseFloat(clean[8]) || null;
                 }
                 newItems.push(item);
             }
@@ -223,7 +230,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
     const renderEditorRow = (form, setForm, onSave, onCancel, saveLabel) => (
         <div className="space-y-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                {[['name', 'Item Name *'], ['brand', 'Brand'], ['code', 'Code'], ['category', 'Category'], ['size', 'Size'], ['colour', 'Colour'], ['price', 'Price (RM)'], ['unit', 'Unit']].map(([f, label]) => (
+                {[['name', 'Item Name *'], ['brand', 'Brand'], ['code', 'Code'], ['category', 'Category'], ['size', 'Size'], ['colour', 'Colour'], ['price', 'Price (RM)'], ['unit', 'Unit'], ['coverage', 'Coverage (m²/unit)'], ['packSize', 'Pack size']].map(([f, label]) => (
                     <label key={f} className="block text-xs font-semibold text-gray-500 uppercase">
                         {label}
                         {f === 'category' ? (
@@ -239,12 +246,25 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                                     <option key={cat} value={cat}>{cat.charAt(0).toUpperCase() + cat.slice(1)}</option>
                                 ))}
                             </select>
-                        ) : f === 'price' || f === 'unit' ? (
+                        ) : f === 'unit' ? (
                             <input
-                                type={f === 'price' ? 'number' : 'text'}
-                                step={f === 'price' ? '0.01' : undefined}
+                                type="text"
                                 value={form[f]}
                                 onChange={e => setForm({ ...form, [f]: e.target.value })}
+                                placeholder="pcs | m | L | bag"
+                                className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm normal-case font-normal focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                        ) : f === 'price' || f === 'coverage' || f === 'packSize' ? (
+                            <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={form[f]}
+                                onChange={e => setForm({ ...form, [f]: e.target.value })}
+                                placeholder={f === 'coverage' ? '0' : '1'}
+                                title={f === 'coverage'
+                                    ? 'm² covered per unit sold — feeds coverage-shortage math in the BOM pre-flight'
+                                    : 'Supplier pack size in this unit (e.g. 1000 for a box sold per pc) — feeds pack quantization'}
                                 className="mt-1 w-full border rounded-lg px-2 py-1.5 text-sm normal-case font-normal focus:ring-2 focus:ring-blue-500 outline-none"
                             />
                         ) : (
@@ -382,11 +402,13 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                                             <td className="px-4 py-2.5 text-gray-400 text-xs">{idx + 1}</td>
                                             <td className="px-4 py-2.5 text-gray-500 text-xs font-mono">{item.unit || 'pcs'}</td>
                                             <td className="px-4 py-2.5">
-                                                <p className="font-medium text-gray-800">{item.name}</p>
-                                                {(item.brand || item.code || item.size || item.colour || (item.aliases?.length)) ? (
+                                                                                                <p className="font-medium text-gray-800">{item.name}</p>
+                                                {(item.brand || item.code || item.size || item.colour || item.coverage || item.packSize || (item.aliases?.length)) ? (
                                                     <p className="text-[11px] text-gray-400">
                                                         {[item.brand, item.code, item.size ? `sz ${item.size}` : '', item.colour]
                                                             .filter(Boolean).join(' · ')}
+                                                        {item.coverage ? ` · cov ${item.coverage} m²/unit` : ''}
+                                                        {item.packSize ? ` · pack ${item.packSize}` : ''}
                                                         {item.aliases?.length ? ` · alias: ${item.aliases.join(', ')}` : ''}
                                                     </p>
                                                 ) : null}

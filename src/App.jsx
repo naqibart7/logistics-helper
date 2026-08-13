@@ -1743,7 +1743,7 @@ const LogisticsSystem = () => {
                 )}
 
                 {activeTab === 'review' && (
-                    <ReviewQueue onChange={() => setReviewCount(reviewQueueCount())} />
+                    <ReviewQueue catalog={itemCatalog} onChange={() => setReviewCount(reviewQueueCount())} />
                 )}
 
                 {activeTab === 'items' && (

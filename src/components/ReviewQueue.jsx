@@ -15,8 +15,32 @@ import {
     discardReviewRow,
     clearReviewQueue,
 } from '../utils/reviewQueue';
+import { recognizeMaterial } from '../utils/excelParser/recognize';
 
-const ReviewQueue = ({ onChange }) => {
+/**
+ * Catalog suggestions for a raw review row: the fuzzy recogniser's top hit
+ * plus any other catalog items that share significant tokens. One tap fills
+ * the resolve input — the human confirms, never the model.
+ */
+const suggestCatalog = (raw, catalog) => {
+    if (!raw) return [];
+    const key = (s) => String(s || '').toLowerCase();
+    const tokens = raw.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length >= 3);
+    const best = recognizeMaterial(raw, catalog, {});
+    const bestName = best && best.hit === 'catalog' ? best.name : null;
+
+    const scored = (catalog || []).map(item => {
+        const hay = key([item.name, ...(item.aliases || [])].join(' '));
+        const hits = tokens.filter(t => hay.includes(t)).length;
+        const exact = bestName && key(bestName) === key(item.name) ? 1.5 : 0;
+        return { item, score: hits + exact };
+    }).filter(s => s.score > 0);
+
+    scored.sort((a, b) => b.score - a.score);
+    return scored.slice(0, 3).map(s => s.item);
+};
+
+const ReviewQueue = ({ catalog, onChange }) => {
     const [rows, setRows] = useState(getReviewQueue());
     const [drafts, setDrafts] = useState({});
     const [flash, setFlash] = useState('');
@@ -138,6 +162,27 @@ const ReviewQueue = ({ onChange }) => {
                                 >
                                     <BookOpen size={15} /> Resolve &. Learn
                                 </button>
+                            </div>
+
+                            {/* Catalog suggestions — one tap fills the resolve form */}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Suggestions:</span>
+                                {suggestCatalog(row.original, catalog).map(s => {
+                                    const active = (drafts[row.key] ?? '') === s.name;
+                                    return (
+                                        <button
+                                            key={s.key || s.name}
+                                            onClick={() => setDrafts(prev => ({ ...prev, [row.key]: s.name }))}
+                                            className={`px-2 py-1 rounded-md text-xs font-medium border transition-colors ${
+                                                active
+                                                    ? 'bg-blue-600 text-white border-blue-600'
+                                                    : 'bg-white text-gray-700 border-gray-200 hover:border-blue-400 hover:bg-blue-50'
+                                            }`}
+                                        >
+                                            {s.name}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}
