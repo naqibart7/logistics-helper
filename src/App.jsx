@@ -343,6 +343,10 @@ const LogisticsSystem = () => {
                 low: lowRows.length,
                 queueAdded,
                 supplier: supplierName,
+                ocr: result.ocrMethod,
+                notice: (result.ocrMethod === 'fallback' && !(result.materials || []).length)
+                    ? 'This looks like a scanned PDF — no embedded text layer was found. Enable GPU OCR by setting UNLIMITED_OCR_URL on Vercel (text PDFs still import fine).'
+                    : null,
             });
         } catch (error) {
             console.error('File Processing Error:', error);
@@ -804,7 +808,7 @@ const LogisticsSystem = () => {
                                 <FileSpreadsheet size={18} />
                             </span>
                             <div>
-                                <p className="font-semibold text-gray-800">Import complete — {importSummary.source}</p>
+                                                                <p className="font-semibold text-gray-800">Import complete — {importSummary.source}</p>
                                 <p className="text-sm text-gray-500">
                                     {importSummary.added} parsed
                                     <span className="mx-1.5">·</span>
@@ -812,7 +816,18 @@ const LogisticsSystem = () => {
                                     {importSummary.queueAdded > 0 && (` → ${importSummary.queueAdded} sent to Needs Review`)}
                                     <span className="mx-1.5">·</span>
                                     supplier: {importSummary.supplier}
+                                    {importSummary.ocr && (
+                                        <>
+                                            <span className="mx-1.5">·</span>
+                                            OCR: {importSummary.ocr}
+                                        </>
+                                    )}
                                 </p>
+                                {importSummary.notice && (
+                                    <p className="mt-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1 inline-block">
+                                        {importSummary.notice}
+                                    </p>
+                                )}
                             </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
