@@ -164,6 +164,7 @@ const LogisticsSystem = () => {
         needByDate: '',
         quotationNumber: '',
         projectNumber: '',
+        area: '',
         materials: [],
         status: 'Draft'
     });
@@ -410,7 +411,7 @@ const LogisticsSystem = () => {
         setProjectForm({
             name: '', client: '', location: '', deliveryAddress: '',
             contactPerson: '', contactPhone: '', needByDate: '',
-            quotationNumber: '', projectNumber: '', materials: [], status: 'Draft'
+            quotationNumber: '', projectNumber: '', area: '', materials: [], status: 'Draft'
         });
         setPreviewData(null);
         setParseMetadata(null);
@@ -422,7 +423,7 @@ const LogisticsSystem = () => {
             setProjectForm({
                 name: '', client: '', location: '', deliveryAddress: '',
                 contactPerson: '', contactPhone: '', needByDate: '',
-                quotationNumber: '', projectNumber: '', materials: [], status: 'Draft'
+                quotationNumber: '', projectNumber: '', area: '', materials: [], status: 'Draft'
             });
             setPreviewData(null);
             setParseMetadata(null);
@@ -1100,6 +1101,14 @@ const LogisticsSystem = () => {
                                                     className="border rounded-lg px-4 py-2.5"
                                                 />
                                                 <input
+                                                    type="number"
+                                                    min="0"
+                                                    placeholder="Estimated Area (m²) — powers coverage checks"
+                                                    value={projectForm.area}
+                                                    onChange={e => setProjectForm({ ...projectForm, area: e.target.value })}
+                                                    className="border rounded-lg px-4 py-2.5"
+                                                />
+                                                <input
                                                     type="date"
                                                     value={projectForm.needByDate}
                                                     onChange={e => setProjectForm({ ...projectForm, needByDate: e.target.value })}
@@ -1287,6 +1296,14 @@ const LogisticsSystem = () => {
                                                     className="border rounded-lg px-4 py-2.5"
                                                 />
                                                 <input
+                                                    type="number"
+                                                    min="0"
+                                                    placeholder="Estimated Area (m²) — powers coverage checks"
+                                                    value={editedProject.area || ''}
+                                                    onChange={e => setEditedProject({ ...editedProject, area: e.target.value })}
+                                                    className="border rounded-lg px-4 py-2.5"
+                                                />
+                                                <input
                                                     type="date"
                                                     value={editedProject.needByDate || ''}
                                                     onChange={e => setEditedProject({ ...editedProject, needByDate: e.target.value })}
@@ -1318,6 +1335,7 @@ const LogisticsSystem = () => {
                                             <p className="text-sm text-gray-600">
                                                 {selectedProject.projectNumber && <span className="font-semibold text-blue-700 mr-2">[{selectedProject.projectNumber}]</span>}
                                                 {selectedProject.client || '—'} • {selectedProject.location || '—'}
+                                                {selectedProject.area && <span className="text-gray-400"> • {selectedProject.area} m²</span>}
                                             </p>
                                             <div className="flex gap-4">
                                                 <button
