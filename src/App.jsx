@@ -39,6 +39,7 @@ import { List, ClipboardList } from 'lucide-react';
 import PublicDashboard from './components/PublicDashboard';
 import CatalogPicker from './components/CatalogPicker';
 import BomPredictorPanel from './components/BomPredictorPanel';
+import { hasCritical } from './utils/bomValidator';
 import QuotesTracker from './components/QuotesTracker';
 
 const generateSafeId = () => {
@@ -129,6 +130,11 @@ const LogisticsSystem = () => {
     };
 
     const [selectedProject, setSelectedProject] = useState(null);
+    // Pre-flight gate: Generate PO is locked while critical dependencies are unresolved.
+    const preflightBlocked = useMemo(
+        () => (selectedProject ? hasCritical(selectedProject.materials, itemCatalog) : false),
+        [selectedProject, itemCatalog]
+    );
     const [showNewProject, setShowNewProject] = useState(false);
     const [showSupplierForm, setShowSupplierForm] = useState(false);
     const [copiedMessage, setCopiedMessage] = useState(false);
@@ -1362,10 +1368,13 @@ const LogisticsSystem = () => {
                                                     </button>
                                                     <button
                                                         onClick={() => generatePO(selectedProject)}
-                                                        className="bg-slate-800 text-white px-5 py-2 rounded-lg hover:bg-slate-900 flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95"
-                                                        title="Generate a Purchase Order PDF (uses accepted-quote supplier, else first supplier)"
+                                                        disabled={preflightBlocked}
+                                                        className={`bg-slate-800 text-white px-5 py-2 rounded-lg flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95 ${preflightBlocked ? 'opacity-40 cursor-not-allowed' : 'hover:bg-slate-900'}`}
+                                                        title={preflightBlocked
+                                                            ? 'Pre-flight gate: resolve critical missing dependencies (see warnings above) before generating a PO'
+                                                            : 'Generate a Purchase Order PDF (uses accepted-quote supplier, else first supplier)'}
                                                     >
-                                                        <DollarSign size={18} /> Generate PO
+                                                        <DollarSign size={18} /> {preflightBlocked ? 'Resolve omissions first' : 'Generate PO'}
                                                     </button>
                                                 </div>
                                             )}

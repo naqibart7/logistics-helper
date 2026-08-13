@@ -7,8 +7,9 @@
  * suggestions are never invented. Manual typing drops toward zero.
  */
 import React, { useMemo } from 'react';
-import { Sparkles, Plus, AlertTriangle, Check } from 'lucide-react';
+import { Sparkles, Plus, AlertTriangle, Check, AlertOctagon, Ruler, Layers } from 'lucide-react';
 import { buildCooccurrence, predictBOM } from '../utils/bomPredictor';
+import { validateDraft } from '../utils/bomValidator';
 import { formatCurrency } from '../utils/pdfParser';
 
 const catalogItem = (catalog, sku) =>
@@ -39,8 +40,13 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
         () => predictBOM(draft, catalog, matrix),
         [draft, catalog, matrix]
     );
+    const validation = useMemo(() => validateDraft(draft, catalog), [draft, catalog]);
 
-    if (!prediction.proactive_suggestions.length && !prediction.conflicts.length) {
+    const hasContent = prediction.proactive_suggestions.length || prediction.conflicts.length ||
+        validation.critical_dependencies.length || validation.quantized_adjustments.length ||
+        validation.unit_conflicts.length;
+    const criticals = validation.critical_dependencies;
+    if (!hasContent) {
         return null;
     }
 
@@ -54,8 +60,70 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                 <span className="text-[11px] text-indigo-400">
                     {prediction.proactive_suggestions.length} suggestion{prediction.proactive_suggestions.length === 1 ? '' : 's'}
                     {prediction.conflicts.length > 0 && ` · ${prediction.conflicts.length} conflict${prediction.conflicts.length === 1 ? '' : 's'}`}
+                    {criticals.length > 0 && ` · ${criticals.length} critical`}
+                    {validation.quantized_adjustments.length > 0 && ` · ${validation.quantized_adjustments.length} quantized`}
                 </span>
             </div>
+
+            {/* Pass 2 — Pre-flight gate: CRITICAL missing dependencies */}
+            {criticals.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-red-700 flex items-center gap-1.5">
+                        <AlertOctagon size={13} /> Pre-flight gate — {criticals.length} critical omission{criticals.length === 1 ? '' : 's'} (resolve before Generate PO)
+                    </p>
+                    <div className="mt-2 space-y-1.5">
+                        {criticals.map((d, i) => (
+                            <div key={i} className="flex items-center justify-between gap-2 bg-white border border-red-100 rounded-lg px-3 py-2">
+                                <p className="text-sm text-red-800 min-w-0">
+                                    <span className="truncate inline-block max-w-[16rem] align-bottom">{d.parent_sku}</span>
+                                    <span className="mx-1.5 text-red-300">→</span>
+                                    <span className="font-semibold">{d.missing_sku}</span>
+                                </p>
+                                <button
+                                    onClick={() => onAdd(makeMaterial(catalog, d.missing_sku, 1, projectCategory))}
+                                    className="shrink-0 px-2.5 py-1 rounded-md bg-red-500 text-white text-xs font-semibold hover:bg-red-600 flex items-center gap-1"
+                                >
+                                    <Plus size={12} /> Add missing
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Pass 2 — pack-size quantization (no fractional / short orders) */}
+            {validation.quantized_adjustments.length > 0 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-600 flex items-center gap-1.5">
+                        <Layers size={13} /> Pack-size quantization ({validation.quantized_adjustments.length})
+                    </p>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {validation.quantized_adjustments.map((q, i) => (
+                            <div key={i} className="text-xs text-slate-600 truncate">
+                                <span className="text-slate-400">{q.raw_qty} → </span>
+                                <span className="font-mono font-bold text-slate-800">{q.final_qty}</span>
+                                <span className="text-slate-400"> · {q.reason}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Pass 2 — unit homogeneity conflicts */}
+            {validation.unit_conflicts.length > 0 && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-amber-700 flex items-center gap-1.5">
+                        <Ruler size={13} /> Unit homogeneity ({validation.unit_conflicts.length})
+                    </p>
+                    <div className="mt-1.5 space-y-1">
+                        {validation.unit_conflicts.map((u, i) => (
+                            <p key={i} className="text-xs text-amber-800 truncate">
+                                {u.item_a} <span className="text-amber-400">vs</span> {u.item_b} — {u.reason}
+                            </p>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {prediction.conflicts.length > 0 && (
                 <div className="space-y-2">
