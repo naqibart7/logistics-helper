@@ -313,11 +313,22 @@ const LogisticsSystem = () => {
             setParseMetadata(result.metadata);
 
             // Diff report + human-in-the-loop: park out-of-distribution rows.
+            // Covers Excel V2 (`lowConfidence`) AND PDF/legacy parsers (rows
+            // with confidence < 0.6) so nothing below τ is ever silently lost.
             const supplierName = result.metadata?.supplier || file.name.replace(/\.[^/.]+$/, '');
-            const lowRows = (result.lowConfidence || []).map(r => ({
-                item: r.item, original: r.original || r.item,
-                supplier: supplierName, confidence: r.confidence, source: 'excel-v2',
-            }));
+            const src = result.ocrMethod || result.format || 'file';
+            const lowRows = [
+                ...(result.lowConfidence || []).map(r => ({
+                    item: r.item, original: r.original || r.item,
+                    supplier: supplierName, confidence: r.confidence, source: src,
+                })),
+                ...(result.materials || [])
+                    .filter(m => Number(m.confidence) < 0.6)
+                    .map(m => ({
+                        item: m.item, original: m.original || m.item,
+                        supplier: supplierName, confidence: m.confidence, source: src,
+                    })),
+            ];
             const queueAdded = addToReviewQueue(lowRows);
             setReviewCount(reviewQueueCount());
             setImportSummary({

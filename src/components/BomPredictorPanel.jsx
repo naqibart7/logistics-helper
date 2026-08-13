@@ -14,6 +14,8 @@ import { formatCurrency } from '../utils/pdfParser';
 const catalogItem = (catalog, sku) =>
     (catalog || []).find(c => c.name === sku) || null;
 
+const fmt = (price) => (Number(price) > 0 ? formatCurrency(Number(price)) : '—');
+
 const makeMaterial = (catalog, sku, qty, categoryHint) => {
     const item = catalogItem(catalog, sku) || { name: sku, price: 0, unit: 'pcs', category: categoryHint };
     const quantity = Math.max(1, Math.round(Number(qty) || 1));
@@ -35,8 +37,7 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
     const matrix = useMemo(() => buildCooccurrence({ projects: history, catalog }), [history, catalog]);
     const prediction = useMemo(
         () => predictBOM(draft, catalog, matrix),
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [draft, catalog] // matrix is stable memo fed by history/catalog
+        [draft, catalog, matrix]
     );
 
     if (!prediction.proactive_suggestions.length && !prediction.conflicts.length) {
@@ -87,7 +88,7 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                                 <div className="min-w-0">
                                     <p className="text-sm font-medium text-gray-800 leading-tight">{s.sku}</p>
                                     <p className="text-[11px] text-gray-400">
-                                        {item ? formatCurrency(item.price) : '—'} / {item?.unit || 'pcs'}
+                                        {fmt(item?.price)} / {item?.unit || 'pcs'}
                                         {' · '}qty {s.suggested_qty}
                                         {' · '}{s.reason}
                                     </p>

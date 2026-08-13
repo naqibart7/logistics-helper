@@ -9,7 +9,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { RefreshCw, TrendingUp, Check, Sparkles } from 'lucide-react';
 import ItemDatabase from './ItemDatabase';
-import { getCatalogInsights, observeProjects, observeSupplierImport } from '../utils/catalogLearning';
+import { getCatalogInsights, observeProjects } from '../utils/catalogLearning';
 import { applyBestPrice } from '../utils/catalogLearning';
 import { formatCurrency } from '../utils/pdfParser';
 
@@ -33,6 +33,16 @@ const CatalogTab = ({ catalog, setCatalog, projects, suppliers }) => {
     const apply = (ins) => {
         const best = applyBestPrice(catalog, ins.name);
         if (!Number.isFinite(best)) return;
+        const current = catalog.find(i => i.name.toLowerCase() === ins.name.toLowerCase());
+        if (current && Number(current.price) === best) {
+            setApplied(prev => ({ ...prev, [ins.key]: best }));
+            setTimeout(() => setApplied(prev => ({ ...prev, [ins.key]: undefined })), 1800);
+            return;
+        }
+        const confirmMsg = current
+            ? `Update "${ins.name}" from ${formatCurrency(Number(current.price) || 0)} to ${formatCurrency(best)}?`
+            : `Apply best price ${formatCurrency(best)} to "${ins.name}"?`;
+        if (!window.confirm(confirmMsg)) return;
         setCatalog(prev => prev.map(i =>
             i.name.toLowerCase() === ins.name.toLowerCase() ? { ...i, price: best } : i
         ));
