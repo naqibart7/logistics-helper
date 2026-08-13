@@ -74,6 +74,46 @@ const packOf = (itemName, unit) => {
     return m ? Math.max(1, Math.round(parseFloat(m[1].replace(/,/g, '')))) : 1;
 };
 
+/* ── Coverage rates (m² covered per unit, per discipline) ───────────────────── */
+/** keyword → { m2PerUnit, unitHint } — engineering-standard constants. */
+const COVERAGE = [
+    { kw: /(emulsion|paint)/i, m2PerUnit: 12, unitHint: 'L' },         // per coat, 1 coat baseline
+    { kw: /(tile adhesive|adhesive for tile)/i, m2PerUnit: 3, unitHint: 'bag' },
+    { kw: /(tile grout|grout)/i, m2PerUnit: 8, unitHint: 'bag' },
+    { kw: /(joint compound|compound)/i, m2PerUnit: 8, unitHint: 'bag' },
+];
+const coverageOf = (name) => {
+    const hit = COVERAGE.find(r => r.kw.test(name));
+    return hit ? hit : null;
+};
+
+/** Resolve the draft's working Area (m²): explicit ctx first, else an Area row. */
+const detectArea = (draft, ctxArea) => {
+    const explicit = Number(ctxArea);
+    if (Number.isFinite(explicit) && explicit > 0) return explicit;
+    for (const r of Array.isArray(draft) ? draft : []) {
+        const name = String(r.item || r.original || '');
+        const q = Number(r.quantity) || Number(r.qty);
+        if (!Number.isFinite(q) || q <= 0) continue;
+        const isArea = /(floor area|site area|total area|coverage area|area\b)/i.test(name) ||
+            /\b(sqm|m²|sq ft|sqft|square (meter|foot)s?)\b/i.test(name);
+        if (!isArea) continue;
+        return /\bsq ?ft\b|\bsquare feet?\b/i.test(name) ? q / 10.7639 : q; // ft² → m²
+    }
+    return 0; // unknown area → coverage checks cannot run (no blind guessing)
+};
+
+/** Same-family catalog item whose dimension token matches the required value. */
+const matchingFitting = (catalog, familyKw, wantToken) => {
+    if (!wantToken) return null;
+    for (const item of (catalog || [])) {
+        if (!familyKw.test(item.name)) continue;
+        const t = sizeToken(item.name);
+        if (t && Math.abs(t.value - wantToken.value) < 1e-6) return item.name;
+    }
+    return null;
+};
+
 /* ── Unit homogeneity: extract a dimensional token for a family ────────────── */
 const sizeToken = (name) => {
     const m = String(name).match(/(\d+(?:\.\d+)?)\s*(mm|cm|in|inch|"|ft|feet)/i);
@@ -86,14 +126,20 @@ const sizeToken = (name) => {
 /* ── THE DETERMINISTIC PASS ─────────────────────────────────────────────────── */
 /**
  * Full pre-flight validation of a draft against the dependency graph, pack
- * sizes and unit space.
+ * sizes, unit space and coverage math.
+ * @param {Array} draft   – current BOM rows {item, quantity, unit, ...}
+ * @param {Array} catalog – canonical catalog
+ * @param {Object} [ctx]  – { area } project area in m² (optional; may also be
+ *                          carried by an "Area" row in the draft)
  * @returns {{
  *   quantized_adjustments: Array<{sku, raw_qty, final_qty, reason}>,
  *   critical_dependencies: Array<{parent_sku, missing_sku, risk_level}>,
- *   unit_conflicts: Array<{item_a, item_b, reason}>
+ *   unit_conflicts: Array<{item_a, item_b, reason, resolution_sku?}>,
+ *   coverage_shortages: Array<{sku, current_qty, required_qty, reason}>,
+ *   dimensional_conflicts: Array<{target_sku, resolution_sku, reason}>
  * }}
  */
-export const validateDraft = (draft = [], catalog = []) => {
+export const validateDraft = (draft = [], catalog = [], ctx = {}) => {
     const rows = Array.isArray(draft) ? draft : [];
     const resolved = rows
         .map(r => ({ r, c: catOf(r.item || r.original, catalog, r.section) }))
@@ -146,23 +192,99 @@ export const validateDraft = (draft = [], catalog = []) => {
 
     /* 3) Unit homogeneity within a connected family (pipe vs fitting) */
     const unit_conflicts = [];
-    const pipeFamily = resolved.filter(({ c }) => /(pipe|pvc)/i.test(c.name));
+    const dimensional_conflicts = [];
+    const pipeFamily = resolved.filter(({ c }) => /(pipe|pvc|conduit)/i.test(c.name));
     for (let i = 0; i < pipeFamily.length; i++) {
         for (let j = i + 1; j < pipeFamily.length; j++) {
             const a = pipeFamily[i], b = pipeFamily[j];
             const sa = sizeToken(a.c.name), sb = sizeToken(b.c.name);
             if (sa && sb && Math.abs(sa.value - sb.value) > 1e-6) {
+                // resolution = the mismatched fitting re-sized to match its parent
+                const isFit = (n) => /(fitting|elbow|tee|coupling|connector|cap|reducer|union)/i.test(n);
+                let resolution_sku = null;
+                if (isFit(b.c.name)) {
+                    resolution_sku = matchingFitting(catalog, /(fitting|elbow|tee|coupling|connector|cap|reducer|union)/i, sa);
+                } else if (isFit(a.c.name)) {
+                    resolution_sku = matchingFitting(catalog, /(fitting|elbow|tee|coupling|connector|cap|reducer|union)/i, sb);
+                }
                 unit_conflicts.push({
                     item_a: a.c.name,
                     item_b: b.c.name,
                     reason: `${sa.label} vs ${sb.label} — dimensional_mismatch`,
+                    resolution_sku,
+                });
+                if (resolution_sku) {
+                    const target = isFit(b.c.name) ? b.c.name : a.c.name;
+                    dimensional_conflicts.push({
+                        target_sku: target,
+                        resolution_sku,
+                        reason: 'dimension_mismatch',
+                    });
+                }
+            }
+        }
+    }
+
+    /* 4) Coverage math — CRITICAL_SHORTAGE when Draft < Area/rate × (1+W) */
+    const coverage_shortages = [];
+    const area = detectArea(rows, ctx.area);
+    if (area > 0) {
+        for (const { r, c } of resolved) {
+            const cov = coverageOf(c.name);
+            if (!cov) continue;
+            const q = Number(r.quantity) || Number(r.qty);
+            if (!Number.isFinite(q) || q <= 0) continue;
+            const W = wasteOf(c.name);
+            const required = (area / cov.m2PerUnit) * (1 + W);
+            if (q < required) {
+                coverage_shortages.push({
+                    sku: c.name,
+                    current_qty: q,
+                    required_qty: Math.ceil(required),
+                    reason: 'coverage_deficit',
                 });
             }
         }
     }
 
-    return { quantized_adjustments, critical_dependencies, unit_conflicts };
+    return { quantized_adjustments, critical_dependencies, unit_conflicts, coverage_shortages, dimensional_conflicts };
 };
 
 /** True when the draft carries any unresolved CRITICAL_MISSING_DEPENDENCY. */
 export const hasCritical = (draft, catalog) => validateDraft(draft, catalog).critical_dependencies.length > 0;
+
+/**
+ * Pass 3 — Deterministic Injection. Emits the CSP state-update contract with
+ * the exact resolution SKU from the Canonical Catalog that satisfies each
+ * constraint. Every injected SKU exists in the catalog and its quantity is
+ * derived from exact coverage math — never a guess.
+ * @returns {{
+ *   dimensional_conflicts: Array<{target_sku, resolution_sku, reason}>,
+ *   coverage_shortages: Array<{sku, current_qty, required_qty, reason}>,
+ *   auto_injections: Array<{sku, qty, confidence}>
+ * }}
+ */
+export const satisfyDraft = (draft = [], catalog = [], ctx = {}) => {
+    const v = validateDraft(draft, catalog, ctx);
+
+    const auto_injections = [];
+    // dependency accessor + the shortage make-up qty + dimensional replacement
+    for (const d of v.critical_dependencies) {
+        if (d.missing_sku) auto_injections.push({ sku: d.missing_sku, qty: 1, confidence: 1 });
+    }
+    for (const s of v.coverage_shortages) {
+        const makeUp = s.required_qty - Math.floor(s.current_qty);
+        if (makeUp > 0) auto_injections.push({ sku: s.sku, qty: makeUp, confidence: 1 });
+    }
+    for (const c of v.dimensional_conflicts) {
+        if (c.resolution_sku && !auto_injections.some(a => a.sku === c.resolution_sku)) {
+            auto_injections.push({ sku: c.resolution_sku, qty: 1, confidence: 1 });
+        }
+    }
+
+    return {
+        dimensional_conflicts: v.dimensional_conflicts,
+        coverage_shortages: v.coverage_shortages,
+        auto_injections,
+    };
+};

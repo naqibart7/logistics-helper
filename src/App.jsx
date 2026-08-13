@@ -1180,6 +1180,7 @@ const LogisticsSystem = () => {
                                                 draft={projectForm.materials}
                                                 catalog={itemCatalog}
                                                 history={projects}
+                                                area={projectForm.area || projectForm.siteArea || undefined}
                                                 onAdd={(material) => {
                                                     setProjectForm(prev => ({
                                                         ...prev,
@@ -1411,6 +1412,7 @@ const LogisticsSystem = () => {
                                                     draft={selectedProject.materials}
                                                     catalog={itemCatalog}
                                                     history={projects}
+                                                    area={selectedProject.area || selectedProject.siteArea || undefined}
                                                     onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
                                                 />
                                                 <SupplierTrackedBOM
@@ -1428,6 +1430,7 @@ const LogisticsSystem = () => {
                                                     draft={selectedProject.materials}
                                                     catalog={itemCatalog}
                                                     history={projects}
+                                                    area={selectedProject.area || selectedProject.siteArea || undefined}
                                                     onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
                                                 />
                                                 <EditableBOMTable

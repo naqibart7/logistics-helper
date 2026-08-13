@@ -7,9 +7,9 @@
  * suggestions are never invented. Manual typing drops toward zero.
  */
 import React, { useMemo } from 'react';
-import { Sparkles, Plus, AlertTriangle, Check, AlertOctagon, Ruler, Layers } from 'lucide-react';
+import { Sparkles, Plus, AlertTriangle, Check, AlertOctagon, Ruler, Layers, Boxes } from 'lucide-react';
 import { buildCooccurrence, predictBOM } from '../utils/bomPredictor';
-import { validateDraft } from '../utils/bomValidator';
+import { validateDraft, satisfyDraft } from '../utils/bomValidator';
 import { formatCurrency } from '../utils/pdfParser';
 
 const catalogItem = (catalog, sku) =>
@@ -34,17 +34,19 @@ const makeMaterial = (catalog, sku, qty, categoryHint) => {
     };
 };
 
-const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, projectCategory }) => {
+const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, projectCategory, area }) => {
     const matrix = useMemo(() => buildCooccurrence({ projects: history, catalog }), [history, catalog]);
     const prediction = useMemo(
         () => predictBOM(draft, catalog, matrix),
         [draft, catalog, matrix]
     );
-    const validation = useMemo(() => validateDraft(draft, catalog), [draft, catalog]);
+    const validation = useMemo(() => validateDraft(draft, catalog, { area }), [draft, catalog, area]);
+    const csp = useMemo(() => satisfyDraft(draft, catalog, { area }), [draft, catalog, area]);
 
     const hasContent = prediction.proactive_suggestions.length || prediction.conflicts.length ||
         validation.critical_dependencies.length || validation.quantized_adjustments.length ||
-        validation.unit_conflicts.length;
+        validation.unit_conflicts.length || csp.coverage_shortages.length ||
+        csp.dimensional_conflicts.length;
     const criticals = validation.critical_dependencies;
     if (!hasContent) {
         return null;
@@ -62,8 +64,39 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                     {prediction.conflicts.length > 0 && ` · ${prediction.conflicts.length} conflict${prediction.conflicts.length === 1 ? '' : 's'}`}
                     {criticals.length > 0 && ` · ${criticals.length} critical`}
                     {validation.quantized_adjustments.length > 0 && ` · ${validation.quantized_adjustments.length} quantized`}
+                    {csp.coverage_shortages.length > 0 && ` · ${csp.coverage_shortages.length} shortage${csp.coverage_shortages.length === 1 ? '' : 's'}`}
                 </span>
             </div>
+
+            {/* Pass 2 — coverage math (CRITICAL_SHORTAGE) */}
+            {csp.coverage_shortages.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2.5">
+                    <p className="text-xs font-bold uppercase tracking-wide text-red-700 flex items-center gap-1.5">
+                        <Boxes size={13} /> Coverage deficit — {csp.coverage_shortages.length} shortage{csp.coverage_shortages.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="mt-2 space-y-1.5">
+                        {csp.coverage_shortages.map((s, i) => {
+                            const inj = csp.auto_injections.find(a => a.sku === s.sku);
+                            const injQty = inj ? inj.qty : Math.ceil(s.required_qty - s.current_qty);
+                            return (
+                                <div key={i} className="flex items-center justify-between gap-2 bg-white border border-red-100 rounded-lg px-3 py-2">
+                                    <p className="text-sm text-red-800 min-w-0 truncate">
+                                        {s.sku}: <span className="font-mono">{s.current_qty}</span> have,
+                                        <span className="font-mono font-semibold"> {s.required_qty}</span> needed
+                                        <span className="text-red-400"> (area {Math.round(area || 0)} m², incl. waste)</span>
+                                    </p>
+                                    <button
+                                        onClick={() => onAdd(makeMaterial(catalog, s.sku, injQty, projectCategory))}
+                                        className="shrink-0 px-2.5 py-1 rounded-md bg-red-500 text-white text-xs font-semibold hover:bg-red-600 flex items-center gap-1"
+                                    >
+                                        <Plus size={12} /> Add {injQty}
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
 
             {/* Pass 2 — Pre-flight gate: CRITICAL missing dependencies */}
             {criticals.length > 0 && (
@@ -117,9 +150,19 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                     </p>
                     <div className="mt-1.5 space-y-1">
                         {validation.unit_conflicts.map((u, i) => (
-                            <p key={i} className="text-xs text-amber-800 truncate">
-                                {u.item_a} <span className="text-amber-400">vs</span> {u.item_b} — {u.reason}
-                            </p>
+                            <div key={i} className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-amber-800 truncate">
+                                    {u.item_a} <span className="text-amber-400">vs</span> {u.item_b} — {u.reason}
+                                </p>
+                                {u.resolution_sku && (
+                                    <button
+                                        onClick={() => onAdd(makeMaterial(catalog, u.resolution_sku, 1, projectCategory))}
+                                        className="shrink-0 px-2 py-0.5 rounded-md bg-amber-500 text-white text-[11px] font-semibold hover:bg-amber-600 flex items-center gap-1"
+                                    >
+                                        <Plus size={11} /> Use {u.resolution_sku.split(' ').slice(0, 3).join(' ')}
+                                    </button>
+                                )}
+                            </div>
                         ))}
                     </div>
                 </div>
