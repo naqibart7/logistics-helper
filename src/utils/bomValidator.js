@@ -58,7 +58,7 @@ const WASTE = [
     { kw: /(paint|emulsion)/i, w: 0.1 },
     { kw: /(plywood|timber|wood)/i, w: 0.1 },
 ];
-const wasteOf = (name) => {
+export const wasteOf = (name) => {
     const hit = WASTE.find(r => r.kw.test(name));
     return hit ? hit.w : 0;
 };
@@ -66,7 +66,7 @@ const wasteOf = (name) => {
 /** Best-effort pack size P from unit + name. Continuous units → NaN (skip). */
 const DISCRETE_UNITS = new Set(['pcs', 'piece', 'pieces', 'no', 'pc', 'box', 'bag', 'pack', 'roll', 'rolls', 'set', 'unit', 'carton']);
 const CONTAINER_UNITS = new Set(['box', 'bag', 'pack', 'roll', 'rolls', 'set', 'carton']);
-const packOf = (itemName, unit, item) => {
+export const packOf = (itemName, unit, item) => {
     // A supplier-declared packSize always wins (overrides unit heuristics).
     if (item && Number.isFinite(Number(item.packSize)) && Number(item.packSize) > 0) {
         return Math.max(1, Math.round(Number(item.packSize)));
@@ -96,7 +96,7 @@ const coverageOf = (name, item) => {
 };
 
 /** Resolve the draft's working Area (m²): explicit ctx first, else an Area row. */
-const detectArea = (draft, ctxArea) => {
+export const detectArea = (draft, ctxArea) => {
     const explicit = Number(ctxArea);
     if (Number.isFinite(explicit) && explicit > 0) return explicit;
     for (const r of Array.isArray(draft) ? draft : []) {
@@ -112,7 +112,7 @@ const detectArea = (draft, ctxArea) => {
 };
 
 /** Same-family catalog item whose dimension token matches the required value. */
-const matchingFitting = (catalog, familyKw, wantToken) => {
+export const matchingFitting = (catalog, familyKw, wantToken) => {
     if (!wantToken) return null;
     for (const item of (catalog || [])) {
         if (!familyKw.test(item.name)) continue;
@@ -123,7 +123,7 @@ const matchingFitting = (catalog, familyKw, wantToken) => {
 };
 
 /* ── Unit homogeneity: extract a dimensional token for a family ────────────── */
-const sizeToken = (name) => {
+export const sizeToken = (name) => {
     const m = String(name).match(/(\d+(?:\.\d+)?)\s*(mm|cm|in|inch|"|ft|feet)/i);
     if (!m) return null;
     const v = parseFloat(m[1]);

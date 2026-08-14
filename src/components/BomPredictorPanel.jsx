@@ -7,9 +7,10 @@
  * suggestions are never invented. Manual typing drops toward zero.
  */
 import React, { useMemo } from 'react';
-import { Sparkles, Plus, AlertTriangle, Check, AlertOctagon, Ruler, Layers, Boxes } from 'lucide-react';
+import { Sparkles, Plus, AlertTriangle, Check, AlertOctagon, Ruler, Layers, Boxes, PackagePlus, Shield, Hash, ThumbsUp } from 'lucide-react';
 import { buildCooccurrence, predictBOM } from '../utils/bomPredictor';
 import { validateDraft, satisfyDraft } from '../utils/bomValidator';
+import { runKitEngine, discoverLearnedKits, approveLearnedKit } from '../utils/quickKitEngine';
 import { formatCurrency } from '../utils/pdfParser';
 
 const catalogItem = (catalog, sku) =>
@@ -42,11 +43,18 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
     );
     const validation = useMemo(() => validateDraft(draft, catalog, { area }), [draft, catalog, area]);
     const csp = useMemo(() => satisfyDraft(draft, catalog, { area }), [draft, catalog, area]);
+    const [, forceRerender] = React.useReducer((x) => x + 1, 0);
+    useMemo(() => { try { discoverLearnedKits(matrix, 0.85); } catch { /* noop */ } return null; }, [matrix]);
+    const kitDelta = useMemo(() => runKitEngine(draft, catalog, { area }, { kits: [] }), [draft, catalog, area]);
+
+    const hasKitContent = kitDelta.injections.length > 0 || kitDelta.suggestions.length > 0 || kitDelta.blocked.length > 0;
+
+    const approveAndRefresh = (kitId) => { approveLearnedKit(kitId); forceRerender(); };
 
     const hasContent = prediction.proactive_suggestions.length || prediction.conflicts.length ||
         validation.critical_dependencies.length || validation.quantized_adjustments.length ||
         validation.unit_conflicts.length || csp.coverage_shortages.length ||
-        csp.dimensional_conflicts.length;
+        csp.dimensional_conflicts.length || hasKitContent;
     const criticals = validation.critical_dependencies;
     if (!hasContent) {
         return null;
@@ -67,6 +75,104 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                     {csp.coverage_shortages.length > 0 && ` · ${csp.coverage_shortages.length} shortage${csp.coverage_shortages.length === 1 ? '' : 's'}`}
                 </span>
             </div>
+
+            {/* Quick-Kit Curation & Injection Engine */}
+            {hasKitContent && (
+                <div className="bg-violet-50 border border-violet-200 rounded-lg px-3 py-2.5 space-y-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-violet-700 flex items-center gap-1.5">
+                        <PackagePlus size={13} /> Quick-Kit engine — {kitDelta.injections.length} required · {kitDelta.suggestions.length} suggested · {kitDelta.blocked.length} blocked
+                    </p>
+
+                    {/* AUTO_INJECT (required, source manual|learned) */}
+                    {kitDelta.injections.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {kitDelta.injections.map((inj, i) => {
+                                const item = catalogItem(catalog, inj.sku);
+                                return (
+                                    <div key={i} className="flex items-center gap-2 bg-white border border-violet-100 rounded-lg pl-3 pr-1.5 py-1.5">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-gray-800 leading-tight">{inj.sku}</p>
+                                            <p className="text-[11px] text-gray-400">
+                                                <Shield size={10} className="inline text-violet-400" /> {inj.source === 'manual' ? 'structural' : 'learned'} · qty {inj.qty}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={() => onAdd(makeMaterial(catalog, inj.sku, inj.qty, projectCategory))}
+                                            className="shrink-0 p-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+                                            title={`Inject ${inj.qty} × ${inj.sku}`}
+                                        >
+                                            <Plus size={15} />
+                                        </button>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* blocked / unresolvable — never invented */}
+                    {kitDelta.blocked.length > 0 && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                            {kitDelta.blocked.map((b, i) => (
+                                <p key={i} className="text-xs text-amber-800 flex items-center gap-1.5 py-0.5">
+                                    <AlertTriangle size={12} className="shrink-0 text-amber-500" />
+                                    <span className="truncate">{b.sku}</span>
+                                    <span className="text-amber-500 shrink-0">({b.reason})</span>
+                                    {b.resolution_sku && (
+                                        <button
+                                            onClick={() => onAdd(makeMaterial(catalog, b.resolution_sku, 1, projectCategory))}
+                                            className="shrink-0 px-2 py-0.5 rounded-md bg-amber-500 text-white text-[11px] font-semibold hover:bg-amber-600"
+                                        >
+                                            Use {b.resolution_sku.split(' ').slice(0, 3).join(' ')}
+                                        </button>
+                                    )}
+                                </p>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* optional / learned_candidate suggestions */}
+                    {kitDelta.suggestions.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {kitDelta.suggestions.map((s, i) => {
+                                const item = catalogItem(catalog, s.sku);
+                                return (
+                                    <div key={i} className="flex items-center gap-2 bg-white border border-violet-100 rounded-lg pl-3 pr-1.5 py-1.5">
+                                        <div className="min-w-0">
+                                            <p className="text-sm font-medium text-gray-800 leading-tight">{s.sku}</p>
+                                            <p className="text-[11px] text-gray-400">
+                                                {s.reason === 'learned_candidate' ? (
+                                                    <span className="text-violet-500 flex items-center gap-1">
+                                                        <Hash size={9} /> learned candidate · conf {Math.round((s.confidence || 0) * 100)}%
+                                                    </span>
+                                                ) : (
+                                                    <span>{fmt(item?.price)} / {item?.unit || 'pcs'} · optional</span>
+                                                )}
+                                            </p>
+                                        </div>
+                                        {s.reason === 'learned_candidate' ? (
+                                            <button
+                                                onClick={() => approveAndRefresh(s.kitId)}
+                                                className="shrink-0 p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                                                title="Approve this learned kit (promotes it to an auto-injection for this driver)"
+                                            >
+                                                <ThumbsUp size={15} />
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => onAdd(makeMaterial(catalog, s.sku, 1, projectCategory))}
+                                                className="shrink-0 p-2 rounded-lg bg-violet-500 text-white hover:bg-violet-600 transition-colors"
+                                                title={`Add ${s.sku}`}
+                                            >
+                                                <Check size={15} />
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Pass 2 — coverage math (CRITICAL_SHORTAGE) */}
             {csp.coverage_shortages.length > 0 && (
