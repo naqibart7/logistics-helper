@@ -481,4 +481,4 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
     );
 };
 
-export default EditableBOMTable;
+export default React.memo(EditableBOMTable);

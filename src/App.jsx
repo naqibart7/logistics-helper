@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId, searchFilter } from './utils/helpers';
@@ -408,12 +408,28 @@ const LogisticsSystem = () => {
         setMaterialForm({ category: '', item: '', quantity: '', unit: '' });
     };
 
-    const removeMaterial = (id) => {
+    const removeMaterial = useCallback((id) => {
         setProjectForm(prev => ({
             ...prev,
             materials: prev.materials.filter(m => m.id !== id)
         }));
-    };
+    }, []);
+
+    // Stable draft-material handlers (functional updates only) so the memoized
+    // BOM table can skip re-rendering when unrelated draft fields change.
+    const addDraftMaterial = useCallback((material) => {
+        setProjectForm(prev => ({
+            ...prev,
+            materials: [...prev.materials, { ...material, id: generateSafeId() }]
+        }));
+    }, []);
+
+    const updateDraftMaterial = useCallback((id, updates) => {
+        setProjectForm(prev => ({
+            ...prev,
+            materials: prev.materials.map(m => m.id === id ? { ...m, ...updates } : m)
+        }));
+    }, []);
 
     const saveProject = () => {
         if (!projectForm.name.trim() || projectForm.materials.length === 0) {
@@ -1216,30 +1232,15 @@ const LogisticsSystem = () => {
                                                 catalog={itemCatalog}
                                                 history={projects}
                                                 area={projectForm.area || projectForm.siteArea || undefined}
-                                                onAdd={(material) => {
-                                                    setProjectForm(prev => ({
-                                                        ...prev,
-                                                        materials: [...prev.materials, { ...material, id: generateSafeId() }]
-                                                    }));
-                                                }}
-                                                onRemove={(id) => removeMaterial(id)}
+                                                onAdd={addDraftMaterial}
+                                                onRemove={removeMaterial}
                                             />
 
                                             <EditableBOMTable
                                                 materials={projectForm.materials}
-                                                onUpdate={(id, updates) => {
-                                                    setProjectForm(prev => ({
-                                                        ...prev,
-                                                        materials: prev.materials.map(m => m.id === id ? { ...m, ...updates } : m)
-                                                    }));
-                                                }}
+                                                onUpdate={updateDraftMaterial}
                                                 onRemove={removeMaterial}
-                                                onAdd={(material) => {
-                                                    setProjectForm(prev => ({
-                                                        ...prev,
-                                                        materials: [...prev.materials, { ...material, id: generateSafeId() }]
-                                                    }));
-                                                }}
+                                                onAdd={addDraftMaterial}
                                                 showPrices={true}
                                                 catalog={itemCatalog}
                                             />
