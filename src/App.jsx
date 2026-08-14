@@ -1,21 +1,13 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, lazy, Suspense } from 'react';
 import { Upload, Plus, Save, Copy, CheckCircle, FileText, Database, Package, DollarSign, FileUp, Clipboard, Edit2, X, Download, FileSpreadsheet, Trash2, Check, RefreshCw, AlertTriangle } from 'lucide-react';
 import { useLocalStorage } from './hooks/useLocalStorage';
 import { generateId, searchFilter } from './utils/helpers';
 import { exportBOMToCSV } from './utils/csvExport';
 import { exportSuppliersToCSV, importSuppliersFromFile, downloadSupplierTemplate } from './utils/csvSupplier';
-import { exportChecklistToPDF } from './utils/pdfChecklist';
-import { exportBOMToPDF, exportPOToPDF } from './utils/pdfExport';
-import { parseExcelCostFile } from './utils/excelParser';
-import { parseExcelV2 } from './utils/excelParser/index.js';
-import { tryParseDsgB } from './utils/excelParser/dsgB.js';
 import { observeSupplierImport } from './utils/catalogLearning';
 import { addToReviewQueue, reviewQueueCount } from './utils/reviewQueue';
 import ReviewQueue from './components/ReviewQueue';
 import { formatCurrency } from './utils/pdfParser';
-import { smartParse, smartParseTabular } from './utils/advancedParser';
-import { extractTabularData } from './utils/pdfExtractor';
-import { extractTextSmart } from './utils/ocrClient';
 import FileUploader from './components/FileUploader';
 import ImportPreview from './components/ImportPreview';
 import Modal from './components/Modal';
@@ -32,7 +24,7 @@ import SupplierTrackedBOM from './components/SupplierTrackedBOM';
 import ChecklistBOM from './components/ChecklistBOM';
 import ItemDatabase from './components/ItemDatabase';
 import CatalogTab from './components/CatalogTab';
-import MondayEntryGenerator from './components/MondayEntryGenerator';
+const MondayEntryGenerator = lazy(() => import('./components/MondayEntryGenerator'));
 import { AutocompleteItemInput } from './components/AutocompleteItemInput';
 import { standardCatalog } from './data/standardCatalog';
 import SuggestedSuppliers from './components/SuggestedSuppliers';
@@ -243,7 +235,7 @@ const LogisticsSystem = () => {
         return materials;
     };
 
-    const handlePdfParse = () => {
+    const handlePdfParse = async () => {
         if (!pdfText.trim()) {
             setParseMessage('Please paste some text first');
             setParseMetadata(null);
@@ -251,6 +243,7 @@ const LogisticsSystem = () => {
         }
 
         // Use smartParse directly for consistency with file upload
+        const { smartParse } = await import('./utils/advancedParser');
         const result = smartParse(pdfText);
 
         if (result.materials.length > 0) {
@@ -277,14 +270,17 @@ const LogisticsSystem = () => {
                 // "DSG B" template layout exactly), then V2 interpreter, then the
                 // legacy highlighted-RM template parser as a last resort.
                 setProcessingStep('Detecting template layout...');
+                const { tryParseDsgB } = await import('./utils/excelParser/dsgB.js');
                 const dsgResult = await tryParseDsgB(file);
                 if (dsgResult) {
                     result = dsgResult;
                 } else {
                     setProcessingStep('Analysing workbook layout...');
+                    const { parseExcelV2 } = await import('./utils/excelParser/index.js');
                     result = await parseExcelV2(file, { catalog: itemCatalog || [], ai: true });
                     if (!result.success && result.lowConfidence?.length === 0) {
                         setProcessingStep('Falling back to template parser...');
+                        const { parseExcelCostFile } = await import('./utils/excelParser');
                         result = await parseExcelCostFile(file);
                     }
                 }
@@ -299,22 +295,26 @@ const LogisticsSystem = () => {
                 }
             } else {
                 // PDF → smart path: fast pdfjs detection first, then OCR backend for scanned docs
+                const { extractTextSmart } = await import('./utils/ocrClient');
                 const extracted = await extractTextSmart(file, { onStatus: setProcessingStep });
 
                 if (extracted.method === 'pdfjs') {
                     // Text PDF → layout-aware tabular extraction for best column quality
                     setProcessingStep('Parsing structure...');
+                    const { extractTabularData } = await import('./utils/pdfExtractor');
                     const tabularData = await extractTabularData(file);
                     const text = tabularData.map(p =>
                         p.tables.map(tableGrid => tableGrid.map(row => row.join('    ')).join('\n')).join('\n\n--- NEXT TABLE ZONE ---\n\n')
                     ).join('\n--- PAGE BREAK ---\n');
 
+                    const { smartParseTabular } = await import('./utils/advancedParser');
                     result = smartParseTabular(tabularData, text);
                     result.rawText = text;
                     result.ocrMethod = 'pdfjs';
                 } else {
                     // Scanned PDF → OCR text, then structure parser
                     setProcessingStep('Parsing structure...');
+                    const { smartParse } = await import('./utils/advancedParser');
                     result = smartParse(extracted.text);
                     result.rawText = extracted.text;
                     result.ocrMethod = extracted.method;
@@ -732,7 +732,7 @@ const LogisticsSystem = () => {
         ));
     };
 
-    const generatePO = (project) => {
+    const generatePO = async (project) => {
         const acceptedQuote = (project.quotes || []).find(q => q.status === 'Accepted');
         const supplier = acceptedQuote
             ? suppliers.find(s => String(s.id) === String(acceptedQuote.supplierId))
@@ -741,10 +741,12 @@ const LogisticsSystem = () => {
             alert('Add a supplier first (Suppliers tab) before generating a PO.');
             return;
         }
+        const { exportPOToPDF } = await import('./utils/pdfExport');
         exportPOToPDF(project, supplier);
     };
 
     return (
+        <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-400">Loading…</div>}>
         <div className={`min-h-screen ${!user ? 'bg-[#0a0a0f]' : 'bg-gray-50'}`}>
             <div className={`${!user ? 'bg-[#0a0a0f] border-b border-white/10' : 'bg-blue-700'} text-white p-6 shadow flex justify-between items-center relative z-50`}>
                 <div>
@@ -1403,7 +1405,10 @@ const LogisticsSystem = () => {
                                             <h4 className="font-semibold text-lg">Bill of Materials</h4>
                                             {selectedProject.status === 'Delivered' ? (
                                                 <button
-                                                    onClick={() => exportChecklistToPDF(selectedProject, selectedProject.materials)}
+                                                    onClick={async () => {
+                                                        const { exportChecklistToPDF } = await import('./utils/pdfChecklist');
+                                                        exportChecklistToPDF(selectedProject, selectedProject.materials);
+                                                    }}
                                                     className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95"
                                                 >
                                                     <FileText size={18} /> Download PDF Checklist
@@ -1423,7 +1428,10 @@ const LogisticsSystem = () => {
                                                         <FileSpreadsheet size={18} /> Export CSV
                                                     </button>
                                                     <button
-                                                        onClick={() => exportBOMToPDF(selectedProject)}
+                                                        onClick={async () => {
+                                                        const { exportBOMToPDF } = await import('./utils/pdfExport');
+                                                        exportBOMToPDF(selectedProject);
+                                                    }}
                                                         className="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 flex items-center gap-2 text-sm shadow-sm transition-all active:scale-95"
                                                     >
                                                         <FileText size={18} /> Download PDF
@@ -1791,6 +1799,7 @@ const LogisticsSystem = () => {
                 </>
             )}
         </div>
+        </Suspense>
     );
 };
 
