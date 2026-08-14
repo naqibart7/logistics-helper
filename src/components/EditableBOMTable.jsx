@@ -1,9 +1,187 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Trash2, Edit2, Save, X, Plus, ChevronDown, ChevronRight, Check, AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../utils/pdfParser';
 import { generateId } from '../utils/helpers';
 import { AutocompleteItemInput } from './AutocompleteItemInput';
 
+/**
+ * MaterialRow — one BOM row, memoized so typing in a single row (edit mode) or
+ * toggling rows never re-renders every other row. Non-editing rows receive an
+ * `undefined` editForm and stable handlers, so React.memo skips them.
+ */
+const MaterialRow = React.memo(({ m, isEditing, editForm, showPrices, catalog, onStartEdit, onSaveEdit, onCancelEdit, onEditFormChange, onUpdate, onRemove }) => {
+    const change = (part) => onEditFormChange(prev => ({ ...prev, ...part }));
+
+    if (isEditing) {
+        return (
+            <tr className="border-t bg-blue-50/50">
+                <td className="px-3 py-2">
+                    <input
+                        value={editForm.category || ''}
+                        onChange={e => change({ category: e.target.value })}
+                        className="w-full border rounded px-2 py-1 text-sm font-medium"
+                    />
+                </td>
+                <td className="px-3 py-2">
+                    <AutocompleteItemInput
+                        value={editForm.item || ''}
+                        onChange={val => change({ item: val })}
+                        onSelect={item => {
+                            const eqty = parseFloat(editForm.quantity) || 0;
+                            change({
+                                item: item.name,
+                                category: item.category,
+                                pricePerUnit: item.price,
+                                price: eqty && item.price ? eqty * item.price : null
+                            });
+                        }}
+                        placeholder="Item name"
+                        catalog={catalog}
+                    />
+                </td>
+                <td className="px-3 py-2">
+                    <input
+                        type="number"
+                        value={editForm.quantity ?? ''}
+                        onChange={e => {
+                            const qty = e.target.value;
+                            const pricePerUnit = parseFloat(editForm.pricePerUnit) || 0;
+                            const calculatedPrice = qty && pricePerUnit ? parseFloat(qty) * pricePerUnit : null;
+                            change({ quantity: qty, price: calculatedPrice });
+                        }}
+                        className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
+                    />
+                </td>
+                <td className="px-3 py-2">
+                    <input
+                        value={editForm.unit || ''}
+                        onChange={e => change({ unit: e.target.value })}
+                        className="w-full border rounded px-2 py-1 text-sm"
+                    />
+                </td>
+                {showPrices && (
+                    <>
+                        <td className="px-3 py-2">
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={editForm.pricePerUnit ?? ''}
+                                onChange={e => {
+                                    const pricePerUnit = parseFloat(e.target.value) || null;
+                                    const qty = parseFloat(editForm.quantity) || 0;
+                                    const calculatedPrice = pricePerUnit && qty ? pricePerUnit * qty : null;
+                                    change({ pricePerUnit, price: calculatedPrice });
+                                }}
+                                className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
+                            />
+                        </td>
+                        <td className="px-3 py-2">
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={editForm.price ?? ''}
+                                onChange={e => change({ price: parseFloat(e.target.value) || null })}
+                                className="w-full border rounded px-2 py-1 text-sm text-right bg-white font-mono"
+                            />
+                        </td>
+                    </>
+                )}
+                <td className="px-3 py-2">
+                    <div className="flex gap-1 justify-center">
+                        <button
+                            onClick={() => onSaveEdit(m.id, editForm)}
+                            className="text-green-600 hover:text-green-800 p-1"
+                            title="Save"
+                        >
+                            <Save size={16} />
+                        </button>
+                        <button
+                            onClick={onCancelEdit}
+                            className="text-gray-400 hover:text-gray-600 p-1"
+                            title="Cancel"
+                        >
+                            <X size={16} />
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        );
+    }
+
+    return (
+        <tr className={`border-t hover:bg-blue-50/30 group ${m.confidence !== undefined && m.confidence < 0.6 ? 'bg-amber-50/70' : ''}`}>
+            <td className="px-3 py-2 text-[10px] text-gray-400 font-medium uppercase">{m.category}</td>
+            <td className="px-3 py-2 font-medium text-gray-700">
+                <div className="flex items-center gap-1.5">
+                    <div>{m.item}</div>
+                    {m.confidence !== undefined && m.confidence < 0.6 && (
+                        <span
+                            className="text-amber-600 flex items-center gap-0.5 text-[10px] font-semibold bg-amber-100 px-1.5 py-0.5 rounded"
+                            title={`Low confidence (${Math.round(m.confidence * 100)}%) — review this line, it may be OCR noise`}
+                        >
+                            <AlertTriangle size={10} /> {Math.round(m.confidence * 100)}%
+                        </span>
+                    )}
+                </div>
+                {m.standardItem && m.item !== m.standardItem && (
+                    <div
+                        className="text-[10px] text-blue-600 mt-0.5 flex items-center gap-1 bg-blue-50 w-fit px-1.5 py-0.5 rounded cursor-pointer hover:bg-blue-100 transition-colors"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdate(m.id, {
+                                ...m,
+                                item: m.standardItem,
+                                pricePerUnit: m.standardPrice,
+                                price: m.quantity && m.standardPrice ? m.quantity * m.standardPrice : null,
+                                category: m.standardCategory
+                            });
+                        }}
+                        title="Click to apply standard item mapping"
+                    >
+                        <Check size={10} /> Match: {m.standardItem}
+                    </div>
+                )}
+            </td>
+            <td className="px-3 py-2 text-right font-mono text-gray-900">{m.quantity}</td>
+            <td className="px-3 py-2 text-gray-500">{m.unit}</td>
+            {showPrices && (
+                <>
+                    <td className="px-3 py-2 text-right font-mono text-gray-600 text-[11px]">
+                        {m.pricePerUnit ? formatCurrency(m.pricePerUnit) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono font-semibold text-gray-900">
+                        {m.price ? formatCurrency(m.price) : '—'}
+                    </td>
+                </>
+            )}
+            <td className="px-3 py-2 transition-opacity">
+                <div className="flex gap-2 justify-center">
+                    <button
+                        onClick={() => onStartEdit(m)}
+                        className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"
+                        title="Edit"
+                    >
+                        <Edit2 size={16} />
+                    </button>
+                    <button
+                        onClick={() => {
+                            if (window.confirm('Delete this item?')) {
+                                onRemove(m.id);
+                            }
+                        }}
+                        className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
+                        title="Delete"
+                    >
+                        <Trash2 size={16} />
+                    </button>
+                </div>
+            </td>
+        </tr>
+    );
+});
+
+// `change` merges one edit-field update into the shared editForm (stable setter
+// passed down so memoized rows only re-render when their own form changes).
 const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = true, defaultCategory = '', catalog }) => {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
@@ -18,21 +196,26 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
         pricePerUnit: ''
     });
 
-    const startEdit = (material) => {
+    // Stable handlers so memoized rows skip re-render unless their own data moves.
+    const startEdit = useCallback((material) => {
         setEditingId(material.id);
         setEditForm({ ...material });
-    };
+    }, []);
 
-    const cancelEdit = () => {
+    const cancelEdit = useCallback(() => {
         setEditingId(null);
         setEditForm({});
-    };
+    }, []);
 
-    const saveEdit = () => {
-        onUpdate(editingId, editForm);
+    const saveEdit = useCallback((id, form) => {
+        onUpdate(id, form);
         setEditingId(null);
         setEditForm({});
-    };
+    }, [onUpdate]);
+
+    const onEditFormChange = useCallback((updater) => {
+        setEditForm(prev => (typeof updater === 'function' ? updater(prev) : updater));
+    }, []);
 
     const handleAddNew = () => {
         if (!newItemForm.item.trim()) return;
@@ -254,173 +437,20 @@ const EditableBOMTable = ({ materials, onUpdate, onRemove, onAdd, showPrices = t
 
                                 {/* Material Rows for Category */}
                                 {!collapsedCategories[category] && groupedMaterials[category].map((m, i) => (
-                                    <tr key={m.id || i} className={`border-t hover:bg-blue-50/30 group ${m.confidence !== undefined && m.confidence < 0.6 ? 'bg-amber-50/70' : ''}`}>
-                                        {editingId === m.id ? (
-                                            // Edit mode
-                                            <>
-                                                <td className="px-3 py-2">
-                                                    <input
-                                                        value={editForm.category}
-                                                        onChange={e => setEditForm({ ...editForm, category: e.target.value })}
-                                                        className="w-full border rounded px-2 py-1 text-sm font-medium"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <AutocompleteItemInput
-                                                        value={editForm.item}
-                                                        onChange={val => setEditForm({ ...editForm, item: val })}
-                                                        onSelect={item => {
-                                                            const eqty = parseFloat(editForm.quantity) || 0;
-                                                            setEditForm({
-                                                                ...editForm,
-                                                                item: item.name,
-                                                                category: item.category,
-                                                                pricePerUnit: item.price,
-                                                                price: eqty && item.price ? eqty * item.price : null
-                                                            });
-                                                        }}
-                                                        placeholder="Item name"
-                                                        catalog={catalog}
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <input
-                                                        type="number"
-                                                        value={editForm.quantity}
-                                                        onChange={e => {
-                                                            const qty = e.target.value;
-                                                            const pricePerUnit = parseFloat(editForm.pricePerUnit) || 0;
-                                                            const calculatedPrice = qty && pricePerUnit ? parseFloat(qty) * pricePerUnit : null;
-                                                            setEditForm({ ...editForm, quantity: qty, price: calculatedPrice });
-                                                        }}
-                                                        className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
-                                                    />
-                                                </td>
-                                                <td className="px-3 py-2">
-                                                    <input
-                                                        value={editForm.unit}
-                                                        onChange={e => setEditForm({ ...editForm, unit: e.target.value })}
-                                                        className="w-full border rounded px-2 py-1 text-sm"
-                                                    />
-                                                </td>
-                                                {showPrices && (
-                                                    <>
-                                                        <td className="px-3 py-2">
-                                                            <input
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={editForm.pricePerUnit || ''}
-                                                                onChange={e => {
-                                                                    const pricePerUnit = parseFloat(e.target.value) || null;
-                                                                    const qty = parseFloat(editForm.quantity) || 0;
-                                                                    const calculatedPrice = pricePerUnit && qty ? pricePerUnit * qty : null;
-                                                                    setEditForm({ ...editForm, pricePerUnit, price: calculatedPrice });
-                                                                }}
-                                                                className="w-full border rounded px-2 py-1 text-sm text-right font-mono"
-                                                            />
-                                                        </td>
-                                                        <td className="px-3 py-2">
-                                                            <input
-                                                                type="number"
-                                                                step="0.01"
-                                                                value={editForm.price || ''}
-                                                                onChange={e => setEditForm({ ...editForm, price: parseFloat(e.target.value) || null })}
-                                                                className="w-full border rounded px-2 py-1 text-sm text-right bg-white font-mono"
-                                                            />
-                                                        </td>
-                                                    </>
-                                                )}
-                                                <td className="px-3 py-2">
-                                                    <div className="flex gap-1 justify-center">
-                                                        <button
-                                                            onClick={saveEdit}
-                                                            className="text-green-600 hover:text-green-800 p-1"
-                                                            title="Save"
-                                                        >
-                                                            <Save size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={cancelEdit}
-                                                            className="text-gray-400 hover:text-gray-600 p-1"
-                                                            title="Cancel"
-                                                        >
-                                                            <X size={16} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </>
-                                        ) : (
-                                            // View mode
-                                            <>
-                                                <td className="px-3 py-2 text-[10px] text-gray-400 font-medium uppercase">{m.category}</td>
-                                                <td className="px-3 py-2 font-medium text-gray-700">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <div>{m.item}</div>
-                                                        {m.confidence !== undefined && m.confidence < 0.6 && (
-                                                            <span
-                                                                className="text-amber-600 flex items-center gap-0.5 text-[10px] font-semibold bg-amber-100 px-1.5 py-0.5 rounded"
-                                                                title={`Low confidence (${Math.round(m.confidence * 100)}%) — review this line, it may be OCR noise`}
-                                                            >
-                                                                <AlertTriangle size={10} /> {Math.round(m.confidence * 100)}%
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    {m.standardItem && m.item !== m.standardItem && (
-                                                        <div
-                                                            className="text-[10px] text-blue-600 mt-0.5 flex items-center gap-1 bg-blue-50 w-fit px-1.5 py-0.5 rounded cursor-pointer hover:bg-blue-100 transition-colors"
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                onUpdate(m.id, {
-                                                                    ...m,
-                                                                    item: m.standardItem,
-                                                                    pricePerUnit: m.standardPrice,
-                                                                    price: m.quantity && m.standardPrice ? m.quantity * m.standardPrice : null,
-                                                                    category: m.standardCategory
-                                                                });
-                                                            }}
-                                                            title="Click to apply standard item mapping"
-                                                        >
-                                                            <Check size={10} /> Match: {m.standardItem}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-3 py-2 text-right font-mono text-gray-900">{m.quantity}</td>
-                                                <td className="px-3 py-2 text-gray-500">{m.unit}</td>
-                                                {showPrices && (
-                                                    <>
-                                                        <td className="px-3 py-2 text-right font-mono text-gray-600 text-[11px]">
-                                                            {m.pricePerUnit ? formatCurrency(m.pricePerUnit) : '—'}
-                                                        </td>
-                                                        <td className="px-3 py-2 text-right font-mono font-semibold text-gray-900">
-                                                            {m.price ? formatCurrency(m.price) : '—'}
-                                                        </td>
-                                                    </>
-                                                )}
-                                                <td className="px-3 py-2 transition-opacity">
-                                                    <div className="flex gap-2 justify-center">
-                                                        <button
-                                                            onClick={() => startEdit(m)}
-                                                            className="text-blue-600 hover:bg-blue-50 p-1.5 rounded transition-colors"
-                                                            title="Edit"
-                                                        >
-                                                            <Edit2 size={16} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                if (window.confirm('Delete this item?')) {
-                                                                    onRemove(m.id);
-                                                                }
-                                                            }}
-                                                            className="text-red-500 hover:bg-red-50 p-1.5 rounded transition-colors"
-                                                            title="Delete"
-                                                        >
-                                                            <Trash2 size={16} />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </>
-                                        )}
-                                    </tr>
+                                    <MaterialRow
+                                        key={m.id || i}
+                                        m={m}
+                                        isEditing={editingId === m.id}
+                                        editForm={editingId === m.id ? editForm : undefined}
+                                        showPrices={showPrices}
+                                        catalog={catalog}
+                                        onStartEdit={startEdit}
+                                        onSaveEdit={saveEdit}
+                                        onCancelEdit={cancelEdit}
+                                        onEditFormChange={onEditFormChange}
+                                        onUpdate={onUpdate}
+                                        onRemove={onRemove}
+                                    />
                                 ))}
                             </React.Fragment>
                         ))}
