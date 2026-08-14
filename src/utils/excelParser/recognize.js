@@ -12,17 +12,29 @@ import { itemAliases } from '../catalogEnrich.js';
 
 const STOP = new Set(['the', 'and', 'for', 'with', 'type', 'set', 'x', 'of', 'in', '&']);
 
-/** Tokenise a description into usable matching tokens. */
+const IS_NUM = /^\d+(?:\.\d+)?$/;
+
+/**
+ * Tokenise a description into usable matching tokens.
+ * Decimal sizes ("1.5\"") stay ONE token and single-digit numerics ("3", "4"
+ * from "3/4\"") are kept — sizes are the precise discriminators that stop one
+ * product matching a sibling ("1\"" must never beat "1.5\"" or "3/4\"").
+ */
 const tokenize = (s) => keyOf(s)
-    .split(/[^a-z0-9]+/)
-    .filter(t => t.length > 1 && !STOP.has(t));
+    .split(/[^a-z0-9.]+/)
+    .filter(t => (t.length > 1 || IS_NUM.test(t)) && !STOP.has(t));
 
 const overlapScore = (a, b) => {
     const as = tokenize(a);
     const bs = tokenize(b);
     if (as.length === 0 || bs.length === 0) return 0;
     const setB = new Set(bs);
-    const hit = as.filter(t => setB.has(t) || bs.some(bt => bt.startsWith(t) || t.startsWith(bt))).length;
+    const hit = as.filter(t => {
+        if (setB.has(t)) return true;
+        // numeric tokens match EXACTLY — "1.5" must not prefix-match "1"
+        if (IS_NUM.test(t) && bs.some(bt => IS_NUM.test(bt))) return false;
+        return bs.some(bt => bt.startsWith(t) || t.startsWith(bt));
+    }).length;
     const symmetric = hit / Math.max(Math.min(as.length, bs.length), 1);
     return symmetric;
 };

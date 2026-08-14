@@ -189,6 +189,8 @@ export const matchKitDriver = (kit, draft, catalog) => {
 };
 
 /* ── dimensional homogeneity WITHOUT inventing a SKU ───────────────────────── */
+const FIT_KINDS = /(elbow|tee|coupling|connector|cap|reducer|union|bend|fitting|socket|junction)/i;
+
 const dimensionCheck = (driverName, kit, resolved, catalog) => {
     if (!kit.dimensionFamily) return null;
     const family = kit.dimensionFamily;
@@ -199,7 +201,9 @@ const dimensionCheck = (driverName, kit, resolved, catalog) => {
         if (!family.test(member.sku)) continue;
         const got = sizeToken(member.sku);
         if (got && Math.abs(got.value - want.value) > 1e-6) {
-            const resolution = matchingFitting(catalog, family, want);
+            // resolution = a fitting of the CORRECT size, never the driver itself
+            const resolution = matchingFitting(catalog, FIT_KINDS, want) ||
+                (catalog || []).find(c => c.name !== driverName && FIT_KINDS.test(c.name) && (() => { const t = sizeToken(c.name); return t && Math.abs(t.value - want.value) < 1e-6; })())?.name;
             return { sku: member.sku, reason: 'conflict', resolution_sku: resolution || undefined };
         }
     }
