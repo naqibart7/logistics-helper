@@ -8,6 +8,7 @@ import { exportChecklistToPDF } from './utils/pdfChecklist';
 import { exportBOMToPDF, exportPOToPDF } from './utils/pdfExport';
 import { parseExcelCostFile } from './utils/excelParser';
 import { parseExcelV2 } from './utils/excelParser/index.js';
+import { tryParseDsgB } from './utils/excelParser/dsgB.js';
 import { observeSupplierImport } from './utils/catalogLearning';
 import { addToReviewQueue, reviewQueueCount } from './utils/reviewQueue';
 import ReviewQueue from './components/ReviewQueue';
@@ -272,14 +273,20 @@ const LogisticsSystem = () => {
             let result;
 
             if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
-                // Excel → V2 interpreter: adaptive layout/header/columns/sections,
-                // confidence scoring, and catalog recognition. Falls back to the
-                // legacy highlighted-RM template parser when nothing matches.
-                setProcessingStep('Analysing workbook layout...');
-                result = await parseExcelV2(file, { catalog: itemCatalog || [], ai: true });
-                if (!result.success && result.lowConfidence?.length === 0) {
-                    setProcessingStep('Falling back to template parser...');
-                    result = await parseExcelCostFile(file);
+                // Excel → DSG B dual-stream positional extractor first (matches the
+                // "DSG B" template layout exactly), then V2 interpreter, then the
+                // legacy highlighted-RM template parser as a last resort.
+                setProcessingStep('Detecting template layout...');
+                const dsgResult = await tryParseDsgB(file);
+                if (dsgResult) {
+                    result = dsgResult;
+                } else {
+                    setProcessingStep('Analysing workbook layout...');
+                    result = await parseExcelV2(file, { catalog: itemCatalog || [], ai: true });
+                    if (!result.success && result.lowConfidence?.length === 0) {
+                        setProcessingStep('Falling back to template parser...');
+                        result = await parseExcelCostFile(file);
+                    }
                 }
                 result.rawText = result.rawText || `Excel Import: ${file.name}`;
                 result.ocrMethod = 'excel';
@@ -345,9 +352,13 @@ const LogisticsSystem = () => {
                 queueAdded,
                 supplier: supplierName,
                 ocr: result.ocrMethod,
+                engineering: result.metadata?.engineering || null,
+                dualStream: result.metadata?.dualStream ? result.materials.filter(m => m.source === 'main').length : null,
                 notice: (result.ocrMethod === 'fallback' && !(result.materials || []).length)
                     ? 'This looks like a scanned PDF — no embedded text layer was found. Enable GPU OCR by setting UNLIMITED_OCR_URL on Vercel (text PDFs still import fine).'
-                    : null,
+                    : (result.metadata?.engineering?.ratio_violations?.length
+                        ? `Coverage check: ${result.metadata.engineering.ratio_violations.map(v => `${v.missing_accessory} → ${v.required_qty} needed, have ${v.have_qty}`).join(' · ')}. Missing consumables won't block the quote, but they should be added before procurement.`
+                        : null),
             });
         } catch (error) {
             console.error('File Processing Error:', error);
@@ -812,6 +823,12 @@ const LogisticsSystem = () => {
                                                                 <p className="font-semibold text-gray-800">Import complete — {importSummary.source}</p>
                                 <p className="text-sm text-gray-500">
                                     {importSummary.added} parsed
+                                    {importSummary.dualStream !== null && importSummary.dualStream !== undefined && (
+                                        <>
+                                            <span className="mx-1.5">·</span>
+                                            {importSummary.dualStream} main · {importSummary.added - importSummary.dualStream} supporting stream
+                                        </>
+                                    )}
                                     <span className="mx-1.5">·</span>
                                     {importSummary.low} low-confidence
                                     {importSummary.queueAdded > 0 && (` → ${importSummary.queueAdded} sent to Needs Review`)}
