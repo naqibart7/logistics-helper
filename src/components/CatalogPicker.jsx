@@ -13,12 +13,14 @@ import {
     Layers, Package, LayoutGrid, PaintRoller, Hammer, Lightbulb, Droplets,
     HardHat, Wrench, Shield, Truck, Sofa, Gift, Users,
     Search, Plus, Minus, ChevronRight, ArrowLeft, ShoppingCart,
-    Trash2, Sparkles,
+    Trash2, Sparkles, Settings2,
 } from 'lucide-react';
 import { generateId } from '../utils/helpers';
 import { formatCurrency } from '../utils/pdfParser';
-import { buildCatalogHierarchy, flattenHierarchy, resolveKit, QUICK_KITS } from '../data/catalogHierarchy';
+import { buildCatalogHierarchy, flattenHierarchy, resolveKit } from '../data/catalogHierarchy';
 import { getCatalogInsights } from '../utils/catalogLearning';
+import { useQuickKits } from '../hooks/useQuickKits';
+import KitManager from './KitManager';
 
 const learnKey = (s) => String(s || '').toLowerCase();
 
@@ -163,6 +165,8 @@ const CustomItemForm = ({ mainLabel, subLabel, onAdd }) => {
 const CatalogPicker = ({ catalog, onAdd }) => {
     const hierarchy = useMemo(() => buildCatalogHierarchy(catalog), [catalog]);
     const flatItems = useMemo(() => flattenHierarchy(hierarchy), [hierarchy]);
+    const { kits: quickKits, updateKit, removeKit, resetKit, addKit } = useQuickKits();
+    const [manageKits, setManageKits] = useState(false);
     const learns = useMemo(() => {
         const map = {};
         getCatalogInsights().forEach(i => { map[learnKey(i.name)] = i; });
@@ -227,6 +231,17 @@ const CatalogPicker = ({ catalog, onAdd }) => {
     }, [search, flatItems]);
 
     return (
+        manageKits ? (
+            <KitManager
+                catalog={catalog}
+                kits={quickKits}
+                onClose={() => setManageKits(false)}
+                addKit={addKit}
+                updateKit={updateKit}
+                removeKit={removeKit}
+                resetKit={resetKit}
+            />
+        ) : (
         <div className="flex flex-col gap-4 max-h-[75vh]">
             {/* ── Sticky top: back + search + close ─────────────────────────── */}
             <div className="flex items-center gap-3 shrink-0">
@@ -316,14 +331,20 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                 ) : (
                     <>
                         {/* Quick Kits */}
-                        {QUICK_KITS.length > 0 && (
-                            <div className="mb-5">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Sparkles size={15} className="text-amber-500" />
-                                    <span className="text-xs font-bold uppercase tracking-wide text-gray-500">Quick Kits</span>
-                                </div>
+                        <div className="mb-5">
+                            <div className="flex items-center gap-2 mb-2">
+                                <Sparkles size={15} className="text-amber-500" />
+                                <span className="text-xs font-bold uppercase tracking-wide text-gray-500 flex-1">Quick Kits</span>
+                                <button
+                                    onClick={() => setManageKits(true)}
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-blue-600"
+                                >
+                                    <Settings2 size={13} /> Manage
+                                </button>
+                            </div>
+                            {quickKits.length > 0 ? (
                                 <div className="flex gap-3 overflow-x-auto pb-1">
-                                    {QUICK_KITS.map(kit => {
+                                    {quickKits.map(kit => {
                                         const resolved = Math.max(0, resolveKit(kit, catalog || []).length);
                                         const done = addedKits[kit.id];
                                         return (
@@ -342,8 +363,15 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                                         );
                                     })}
                                 </div>
-                            </div>
-                        )}
+                            ) : (
+                                <button
+                                    onClick={() => setManageKits(true)}
+                                    className="w-full p-4 rounded-xl border border-dashed border-gray-300 text-gray-500 hover:border-blue-300 hover:text-blue-600 text-sm font-medium"
+                                >
+                                    All quick kits are hidden — manage them
+                                </button>
+                            )}
+                        </div>
 
                         {/* Main categories */}
                         <div className="flex items-center gap-2 mb-2">
@@ -398,6 +426,7 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                 </div>
             )}
         </div>
+        )
     );
 };
 
