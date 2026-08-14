@@ -371,9 +371,18 @@ const LogisticsSystem = () => {
 
     const confirmImport = (data) => {
         const { metadata, materials } = data;
+        // DSG B paint/coverage math → seed the pre-flight area gate with the
+        // accumulated paintable area (sqft → m²) so coverage checks are exact
+        // instead of waiting on a manual area entry.
+        const eng = metadata?.engineering || null;
+        const paintableSqft = Number(eng?.global_accumulators?.total_paintable_area) || 0;
+        const seededArea = paintableSqft > 0
+            ? Math.max(0, Math.round((paintableSqft / 10.7639) * 100) / 100)
+            : null;
         setProjectForm(prev => ({
             ...prev,
             // Fill available metadata
+            area: seededArea ?? prev.area ?? prev.siteArea,
             name: metadata.projectName || prev.name,
             client: metadata.client || prev.client,
             projectNumber: metadata.projectNumber || prev.projectNumber,
