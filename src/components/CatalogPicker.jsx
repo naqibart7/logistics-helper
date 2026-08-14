@@ -218,6 +218,7 @@ const CatalogPicker = ({ catalog, onAdd }) => {
         const q = search.trim().toLowerCase();
         if (!q) return null;
         const groups = {};
+        const total = { n: 0 };
         flatItems
             .filter(i =>
                 i.name.toLowerCase().includes(q) ||
@@ -225,9 +226,15 @@ const CatalogPicker = ({ catalog, onAdd }) => {
                 i.subLabel.toLowerCase().includes(q) ||
                 String(i.price).toLowerCase().includes(q)
             )
-            .slice(0, 300)
-            .forEach(item => (groups[item.mainId] = groups[item.mainId] || []).push(item));
-        return groups;
+            .forEach(item => {
+                (groups[item.mainId] = groups[item.mainId] || []).push(item);
+                total.n += 1;
+            });
+        // Bound the DOM: cap each group's cards while remembering the true count.
+        Object.keys(groups).forEach(key => {
+            groups[key] = { items: groups[key].slice(0, 120), total: groups[key].length };
+        });
+        return { groups, total: total.n };
     }, [search, flatItems]);
 
     return (
@@ -268,22 +275,24 @@ const CatalogPicker = ({ catalog, onAdd }) => {
             {/* Scrollable content */}
             <div className="overflow-y-auto flex-1 pr-1 -mr-1">
                 {searching ? (
-                    Object.keys(searchGroups || {}).length === 0 ? (
+                    !searchGroups || searchGroups.total === 0 ? (
                         <div className="text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-xl">
                             <p className="font-medium">No matches for “{search}”</p>
                         </div>
                     ) : (
                         <div className="space-y-5">
-                            {Object.entries(searchGroups).map(([mainIdKey, items]) => {
+                            {Object.entries(searchGroups.groups).map(([mainIdKey, group]) => {
                                 const main = hierarchy.find(m => m.id === mainIdKey);
                                 return (
                                     <div key={mainIdKey}>
                                         <div className="flex items-center gap-2 mb-2">
                                             <span className="text-xs font-bold uppercase tracking-wide text-gray-500">{main?.label || mainIdKey}</span>
-                                            <span className="text-[11px] text-gray-400">{items.length}</span>
+                                            <span className="text-[11px] text-gray-400">
+                                                {group.items.length}{group.total > group.items.length ? ` of ${group.total}` : ''}
+                                            </span>
                                         </div>
                                         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                                            {items.map(i => (
+                                            {group.items.map(i => (
                                                 <ItemCard key={i.key} item={i} qty={cart[i.key]?.qty || 0}
                                                     learn={learns[learnKey(i.name)]}
                                                     onMinus={() => bump(i, -1)} onPlus={() => bump(i, 1)}
