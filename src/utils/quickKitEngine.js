@@ -103,6 +103,7 @@ export const getApprovedLearnedKits = () => {
         if (seen.has(candidate.sku)) continue; // one accessory per unique SKU
         seen.add(candidate.sku);
         kits.push({
+            id: kitId,
             driver: new RegExp(keyOf(cid).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'),
             source: 'learned',
             required: [{ sku: candidate.sku, qtyFormula: { per: 'driver', factor: 1 } }],
@@ -112,12 +113,31 @@ export const getApprovedLearnedKits = () => {
     return kits;
 };
 
-/** Drop previously-added {fromKit} rows whose driver no longer appears. */
+/**
+ * Retract kit-injected rows whose driver has vanished from the draft.
+ *
+ * Materials added via a kit injection are tagged `{ fromKit: <driverName> }` by
+ * the panel. Given the current draft's recognized item names, any tagged row
+ * whose driver is no longer present is returned so the caller can drop it.
+ * Untagged/manual rows are never auto-pruned.
+ * @param {Array} rows  – the full BOM rows (may carry { fromKit } tags)
+ * @param {Array} draft – the current draft rows
+ * @returns {Array} rows that should be pruned
+ */
 export const retractKitInjections = (rows, draft) => {
-    const driverText = (draft || []).map(r => keyOf(`${r.item || ''} ${r.original || ''}`)).join(' ');
+    const recognized = (r) => {
+        const n = r && (r.item || r.original);
+        return n ? keyOf(String(n)) : '';
+    };
+    const driverNames = new Set((draft || []).map(recognized).filter(Boolean));
+    const hasDriver = (tag) => {
+        if (!tag) return true; // untagged → caller's decision, never auto-prune
+        const t = keyOf(String(tag));
+        return [...driverNames].some(d => d === t || d.includes(t) || t.includes(d));
+    };
     return (rows || []).filter(r => {
-        if (!r.fromKit) return r;
-        return driverText.includes(keyOf(String(r.fromKit).replace(/^.*::(.*)$/, '$1'))) ? r : false;
+        if (r && typeof r.fromKit === 'string' && r.fromKit) return !hasDriver(r.fromKit);
+        return false;
     });
 };
 
@@ -228,7 +248,7 @@ export const runKitEngine = (draft = [], catalog = [], ctx = {}, opts = {}) => {
             const raw = evalFormula(comp.qtyFormula, { driverQty: driver.qty, area });
             const qty = quantize(raw, item.name, comp.unit || item.unit, item);
             if (qty === null) continue;
-            injections.push({ sku: item.name, qty, source: kit.source || 'manual' });
+            injections.push({ sku: item.name, qty, source: kit.source || 'manual', kit: kit.id, driver: driver.name });
         }
 
         for (const comp of kit.optional || []) {

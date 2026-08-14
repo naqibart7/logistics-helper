@@ -10,7 +10,7 @@ import React, { useMemo } from 'react';
 import { Sparkles, Plus, AlertTriangle, Check, AlertOctagon, Ruler, Layers, Boxes, PackagePlus, Shield, Hash, ThumbsUp } from 'lucide-react';
 import { buildCooccurrence, predictBOM } from '../utils/bomPredictor';
 import { validateDraft, satisfyDraft } from '../utils/bomValidator';
-import { runKitEngine, discoverLearnedKits, approveLearnedKit } from '../utils/quickKitEngine';
+import { runKitEngine, discoverLearnedKits, approveLearnedKit, retractKitInjections } from '../utils/quickKitEngine';
 import { formatCurrency } from '../utils/pdfParser';
 
 const catalogItem = (catalog, sku) =>
@@ -18,7 +18,7 @@ const catalogItem = (catalog, sku) =>
 
 const fmt = (price) => (Number(price) > 0 ? formatCurrency(Number(price)) : '—');
 
-const makeMaterial = (catalog, sku, qty, categoryHint) => {
+const makeMaterial = (catalog, sku, qty, categoryHint, kitDriver) => {
     const item = catalogItem(catalog, sku) || { name: sku, price: 0, unit: 'pcs', category: categoryHint };
     const quantity = Math.max(1, Math.round(Number(qty) || 1));
     const price = Number(item.price) || 0;
@@ -32,10 +32,11 @@ const makeMaterial = (catalog, sku, qty, categoryHint) => {
         price: quantity * price,
         total: quantity * price,
         fromPrediction: true,
+        ...(kitDriver ? { fromKit: kitDriver } : {}),
     };
 };
 
-const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, projectCategory, area }) => {
+const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, onRemove, projectCategory, area }) => {
     const matrix = useMemo(() => buildCooccurrence({ projects: history, catalog }), [history, catalog]);
     const prediction = useMemo(
         () => predictBOM(draft, catalog, matrix),
@@ -46,8 +47,9 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
     const [, forceRerender] = React.useReducer((x) => x + 1, 0);
     useMemo(() => { try { discoverLearnedKits(matrix, 0.85); } catch { /* noop */ } return null; }, [matrix]);
     const kitDelta = useMemo(() => runKitEngine(draft, catalog, { area }, { kits: [] }), [draft, catalog, area]);
+    const staleRows = useMemo(() => retractKitInjections(draft, draft), [draft]);
 
-    const hasKitContent = kitDelta.injections.length > 0 || kitDelta.suggestions.length > 0 || kitDelta.blocked.length > 0;
+    const hasKitContent = kitDelta.injections.length > 0 || kitDelta.suggestions.length > 0 || kitDelta.blocked.length > 0 || staleRows.length > 0;
 
     const approveAndRefresh = (kitId) => { approveLearnedKit(kitId); forceRerender(); };
 
@@ -83,6 +85,26 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                         <PackagePlus size={13} /> Quick-Kit engine — {kitDelta.injections.length} required · {kitDelta.suggestions.length} suggested · {kitDelta.blocked.length} blocked
                     </p>
 
+                    {/* RETRACTION — injected rows whose kit driver left the draft */}
+                    {staleRows.length > 0 && onRemove && (
+                        <div className="bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                            <p className="text-xs font-bold uppercase tracking-wide text-rose-700 flex items-center gap-1.5 mb-1.5">
+                                <AlertTriangle size={12} /> Driver removed — retract {staleRows.length} kit-injected row{staleRows.length === 1 ? '' : 's'}
+                            </p>
+                            {staleRows.map((r, i) => (
+                                <div key={r.id || i} className="flex items-center justify-between gap-2 py-0.5">
+                                    <p className="text-xs text-rose-800 truncate">{r.item}</p>
+                                    <button
+                                        onClick={() => onRemove(r.id)}
+                                        className="shrink-0 px-2 py-0.5 rounded-md bg-rose-500 text-white text-[11px] font-semibold hover:bg-rose-600"
+                                    >
+                                        Retract
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
                     {/* AUTO_INJECT (required, source manual|learned) */}
                     {kitDelta.injections.length > 0 && (
                         <div className="flex flex-wrap gap-2">
@@ -97,7 +119,7 @@ const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, proj
                                             </p>
                                         </div>
                                         <button
-                                            onClick={() => onAdd(makeMaterial(catalog, inj.sku, inj.qty, projectCategory))}
+                                            onClick={() => onAdd(makeMaterial(catalog, inj.sku, inj.qty, projectCategory, inj.driver))}
                                             className="shrink-0 p-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors"
                                             title={`Inject ${inj.qty} × ${inj.sku}`}
                                         >

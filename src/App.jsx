@@ -1213,6 +1213,7 @@ const LogisticsSystem = () => {
                                                         materials: [...prev.materials, { ...material, id: generateSafeId() }]
                                                     }));
                                                 }}
+                                                onRemove={(id) => removeMaterial(id)}
                                             />
 
                                             <EditableBOMTable
@@ -1449,6 +1450,7 @@ const LogisticsSystem = () => {
                                                     history={projects}
                                                     area={selectedProject.area || selectedProject.siteArea || undefined}
                                                     onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
+                                                    onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
                                                 />
                                                 <SupplierTrackedBOM
                                                     materials={selectedProject.materials}
@@ -1467,6 +1469,7 @@ const LogisticsSystem = () => {
                                                     history={projects}
                                                     area={selectedProject.area || selectedProject.siteArea || undefined}
                                                     onAdd={(material) => addProjectMaterial(selectedProject.id, material)}
+                                                    onRemove={(id) => removeProjectMaterial(selectedProject.id, id)}
                                                 />
                                                 <EditableBOMTable
                                                 materials={selectedProject.materials}
