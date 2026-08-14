@@ -14,6 +14,22 @@ const STATUS_STYLES = {
     'N/A': { bg: 'bg-orange-50', text: 'text-orange-700', icon: X, border: 'border-orange-200' }
 };
 
+// Pure helper: suppliers whose categories match a material's category.
+const computeSuggestedSuppliers = (material, suppliers) => {
+    if (!material || !material.category) return [];
+    const matCat = material.category.toLowerCase();
+    return suppliers.filter(s =>
+        (s.categories || []).some(c => {
+            const cl = c.toLowerCase();
+            // Check direct match
+            if (cl.includes(matCat) || matCat.includes(cl)) return true;
+            // Check via CATEGORY_KEYWORDS
+            const keywords = CATEGORY_KEYWORDS[c] || [];
+            return keywords.some(kw => matCat.includes(kw) || kw.includes(matCat));
+        })
+    ).slice(0, 3);
+};
+
 const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onRemove, onBulkUpdate, showPrices = true }) => {
     const [editingId, setEditingId] = useState(null);
     const [editForm, setEditForm] = useState({});
@@ -124,21 +140,15 @@ const SupplierTrackedBOM = ({ materials, suppliers, onUpdate, onRemove, onBulkUp
         });
     };
 
-    // Quick-assign: find suppliers whose categories match a material's category
-    const getSuggestedSuppliers = (material) => {
-        if (!material.category) return [];
-        const matCat = material.category.toLowerCase();
-        return suppliers.filter(s =>
-            (s.categories || []).some(c => {
-                const cl = c.toLowerCase();
-                // Check direct match
-                if (cl.includes(matCat) || matCat.includes(cl)) return true;
-                // Check via CATEGORY_KEYWORDS
-                const keywords = CATEGORY_KEYWORDS[c] || [];
-                return keywords.some(kw => matCat.includes(kw) || kw.includes(matCat));
-            })
-        ).slice(0, 3);
-    };
+    // Precompute suggested suppliers per material once per data change so the
+    // keyword scan over all suppliers never repeats on every row re-render.
+    const suggestedByMaterial = useMemo(() => {
+        const map = {};
+        materials.forEach(m => { map[m.id] = computeSuggestedSuppliers(m, suppliers); });
+        return map;
+    }, [materials, suppliers]);
+
+    const getSuggestedSuppliers = (material) => suggestedByMaterial[material.id] || [];
 
     // Bulk assign: assign all unassigned materials to a supplier
     const bulkAssign = (supplier) => {
