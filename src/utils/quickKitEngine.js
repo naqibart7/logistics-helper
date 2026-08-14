@@ -181,8 +181,16 @@ export const matchKitDriver = (kit, draft, catalog) => {
         if (!name) continue;
         const rec = recognizeMaterial(name, catalog, { section: r.section || '' });
         const probe = rec && rec.hit === 'catalog' ? rec.name : String(name);
+        // kit drivers are EXACT names (manual kits reference catalog SKUs,
+        // learned drivers are matrix keys) — a raw draft name that is itself
+        // an exact catalog hit must match too, even when recognition folds a
+        // superset name ("Plasterboard Screws") onto a shorter sibling.
         if (kit.driver && kit.driver.test(probe)) {
             return { name: probe, qty: num(r.quantity) || num(r.qty) || 1 };
+        }
+        const exact = resolveKitSku(String(name), catalog);
+        if (kit.driver && exact && kit.driver.test(exact.name)) {
+            return { name: exact.name, qty: num(r.quantity) || num(r.qty) || 1 };
         }
     }
     return null;
@@ -275,6 +283,10 @@ export const runKitEngine = (draft = [], catalog = [], ctx = {}, opts = {}) => {
         const driverHit = (draft || []).some(r => {
             const name = r.item || r.original;
             if (!name) return false;
+            // matrix keys are the ACTUAL recognized names from the compiler —
+            // match either the raw draft text or its recognized catalog name
+            const raw = keyOf(String(name));
+            if (probe === raw) return true;
             const rec = recognizeMaterial(name, catalog, { section: r.section || '' });
             return probe === keyOf(rec && rec.hit === 'catalog' ? rec.name : String(name));
         });
