@@ -1,5 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
-import { Plus, Trash2, Edit2, Check, X, Search, Download, FileUp, Package, Save } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Plus, Trash2, Edit2, Check, X, Search, Download, FileUp, Package, Save, ChevronLeft, ChevronRight } from 'lucide-react';
+
+const PAGE_SIZE = 150;
 
 const CATEGORIES = [
     'all', 'hardware', 'electrical', 'lighting', 'paint',
@@ -40,6 +42,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
     const [addForm, setAddForm] = useState(EMPTY_FORM);
     const [sortField, setSortField] = useState('name');
     const [sortDir, setSortDir] = useState('asc');
+    const [page, setPage] = useState(0);
     const fileInputRef = useRef(null);
 
     // Derive unique categories from actual data
@@ -88,6 +91,14 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
 
         return items;
     }, [catalog, search, categoryFilter, sortField, sortDir]);
+
+    // Pagination bounds the DOM to PAGE_SIZE rows; jump back to page 1 whenever
+    // the filtered set changes shape (search / filter / sort / catalog size).
+    const pageCount = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE));
+    const activePage = Math.min(page, pageCount - 1);
+    const pageItems = filteredItems.slice(activePage * PAGE_SIZE, (activePage + 1) * PAGE_SIZE);
+
+    useEffect(() => { setPage(0); }, [search, categoryFilter, sortField, sortDir, catalog.length]);
 
     const toggleSort = (field) => {
         if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
@@ -390,7 +401,7 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
                                     </td>
                                 </tr>
                             ) : (
-                                filteredItems.map((item, idx) => (
+                                pageItems.map((item, idx) => (
                                     editingId === item ? (
                                         <tr key={`${item.name}-${idx}`} className="bg-yellow-50">
                                             <td colSpan={6} className="px-4 py-4">
@@ -437,9 +448,34 @@ const ItemDatabase = ({ catalog, setCatalog }) => {
 
                 {/* Footer summary */}
                 {filteredItems.length > 0 && (
-                    <div className="bg-gray-50 border-t px-4 py-3 flex justify-between items-center text-sm text-gray-600">
-                        <span>Showing {filteredItems.length} of {catalog.length} items</span>
+                    <div className="bg-gray-50 border-t px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-sm text-gray-600">
+                        <span>
+                            Showing {filteredItems.length > 0 ? activePage * PAGE_SIZE + 1 : 0}–{Math.min((activePage + 1) * PAGE_SIZE, filteredItems.length)} of {filteredItems.length} items
+                        </span>
                         <span className="font-medium">Avg price: RM {(filteredItems.reduce((sum, i) => sum + (parseFloat(i.price) || 0), 0) / filteredItems.length).toFixed(2)}</span>
+                        {pageCount > 1 && (
+                            <span className="flex items-center gap-1">
+                                <button
+                                    onClick={() => setPage(p => Math.max(0, p - 1))}
+                                    disabled={activePage === 0}
+                                    className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    aria-label="Previous page"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                                <span className="text-xs text-gray-500 px-1">
+                                    {activePage + 1} / {pageCount}
+                                </span>
+                                <button
+                                    onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+                                    disabled={activePage >= pageCount - 1}
+                                    className="p-1.5 rounded-lg border border-gray-200 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                                    aria-label="Next page"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            </span>
+                        )}
                     </div>
                 )}
             </div>

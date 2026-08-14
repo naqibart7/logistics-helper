@@ -6,7 +6,7 @@
  * Learning is manual-first: refreshing scans the existing data; applying a best
  * price is an explicit per-item action so the catalog never surprises you.
  */
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { RefreshCw, TrendingUp, Check, Sparkles } from 'lucide-react';
 import ItemDatabase from './ItemDatabase';
 import { getCatalogInsights, observeProjects } from '../utils/catalogLearning';
@@ -23,11 +23,14 @@ const CatalogTab = ({ catalog, setCatalog, projects, suppliers }) => {
         return added;
     }, [catalog, projects]);
 
-    // Keep learning hot-but-light: auto-scan once when the tab mounts.
-    const autoScanned = useMemo(() => {
+    // Keep learning hot-but-light: auto-scan once shortly after the tab mounts
+    // so the fuzzy scan never blocks the first paint.
+    const scannedRef = useRef(false);
+    useEffect(() => {
+        if (scannedRef.current) return;
+        scannedRef.current = true;
         const n = observeProjects({ catalog, projects });
         if (n > 0) setInsights(getCatalogInsights());
-        return n;
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const apply = (ins) => {
