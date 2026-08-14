@@ -12,6 +12,7 @@ import { buildCooccurrence, predictBOM } from '../utils/bomPredictor';
 import { validateDraft, satisfyDraft } from '../utils/bomValidator';
 import { runKitEngine, discoverLearnedKits, approveLearnedKit, retractKitInjections } from '../utils/quickKitEngine';
 import { formatCurrency } from '../utils/pdfParser';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
 
 const catalogItem = (catalog, sku) =>
     (catalog || []).find(c => c.name === sku) || null;
@@ -37,17 +38,24 @@ const makeMaterial = (catalog, sku, qty, categoryHint, kitDriver) => {
 };
 
 const BomPredictorPanel = ({ draft = [], catalog = [], history = [], onAdd, onRemove, projectCategory, area }) => {
-    const matrix = useMemo(() => buildCooccurrence({ projects: history, catalog }), [history, catalog]);
+    // Debounce the inputs to the compiled inference passes so rapid typing in
+    // the BOM table doesn't re-run every expensive pass on each keystroke.
+    const dDraft = useDebouncedValue(draft, 300);
+    const dCatalog = useDebouncedValue(catalog, 300);
+    const dHistory = useDebouncedValue(history, 300);
+    const dArea = useDebouncedValue(area, 300);
+
+    const matrix = useMemo(() => buildCooccurrence({ projects: dHistory, catalog: dCatalog }), [dHistory, dCatalog]);
     const prediction = useMemo(
-        () => predictBOM(draft, catalog, matrix),
-        [draft, catalog, matrix]
+        () => predictBOM(dDraft, dCatalog, matrix),
+        [dDraft, dCatalog, matrix]
     );
-    const validation = useMemo(() => validateDraft(draft, catalog, { area }), [draft, catalog, area]);
-    const csp = useMemo(() => satisfyDraft(draft, catalog, { area }), [draft, catalog, area]);
+    const validation = useMemo(() => validateDraft(dDraft, dCatalog, { area: dArea }), [dDraft, dCatalog, dArea]);
+    const csp = useMemo(() => satisfyDraft(dDraft, dCatalog, { area: dArea }), [dDraft, dCatalog, dArea]);
     const [, forceRerender] = React.useReducer((x) => x + 1, 0);
     useMemo(() => { try { discoverLearnedKits(matrix, 0.85); } catch { /* noop */ } return null; }, [matrix]);
-    const kitDelta = useMemo(() => runKitEngine(draft, catalog, { area }, { kits: [] }), [draft, catalog, area]);
-    const staleRows = useMemo(() => retractKitInjections(draft, draft), [draft]);
+    const kitDelta = useMemo(() => runKitEngine(dDraft, dCatalog, { area: dArea }, { kits: [] }), [dDraft, dCatalog, dArea]);
+    const staleRows = useMemo(() => retractKitInjections(dDraft, dDraft), [dDraft]);
 
     const hasKitContent = kitDelta.injections.length > 0 || kitDelta.suggestions.length > 0 || kitDelta.blocked.length > 0 || staleRows.length > 0;
 
