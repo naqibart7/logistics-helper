@@ -92,10 +92,10 @@ const sheetSection = (sheet, rows) => {
 };
 
 /* ── header-driven column mapping (anchored tokens) ──────────────────────── */
-const HEADER_MAT = /^material\b/i;
-const HEADER_QTY = /^(qty|quantity|amount)\b/i;
-const HEADER_PRICE = /^price\b/i;
-const HEADER_TOTAL = /^total\b/i;
+const HEADER_MAT = /material\b/i;
+const HEADER_QTY = /\b(qty|quantity|amount)\b/i;
+const HEADER_PRICE = /\bprice\b/i;
+const HEADER_TOTAL = /\btotal\b/i;
 
 /* Classify a header cell: 'qty' | 'price' | 'total' | null. "TOTAL TRIP" is a
    trip-count quantity, not a cost total, so it maps to qty. */
@@ -120,8 +120,8 @@ const IS_HEADER_ROW = (sheet, R) => {
         else if (kind === 'total') t++;
     }
     if (q + p + t >= 2) return true;
-    return /^material\b|^item\b/i.test(cellStr(sheet, R, 0))
-        || /^material\b|^item\b|^tiles\b|^purpose\b/i.test(cellStr(sheet, R, 1));
+    return /material\b|item\b/i.test(cellStr(sheet, R, 0))
+        || /material\b|item\b|tiles\b|purpose\b/i.test(cellStr(sheet, R, 1));
 };
 
 /* Derive a unit from a QTY column header like "QTY (TONG 1L)" / "QTY (ROLLS)".
