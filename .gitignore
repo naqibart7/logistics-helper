@@ -1,8 +1,8 @@
-node_modules
-dist
-.env
-.env.local
-.DS_Store
-*.zip
+```
+# Test fixtures
+**/__tests__/fixtures/*.expected.json
 
-.vercel
+# Excel parser temp files
+**/excelParser/*.tmp
+**/excelParser/*.temp
+```
