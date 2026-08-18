@@ -1,0 +1,372 @@
+{
+  "projectTotals": {
+    "totalProject": 25900.00,
+    "totalMaterialsAndService": 17643.72
+  },
+  "items": [
+    {
+      "#": 1,
+      "category": "New Structure",
+      "item": "Gypsum Board 9mm",
+      "qty": 8,
+      "unit": "pcs",
+      "unitPrice": 28.00,
+      "total": 224.00,
+      "type": "main"
+    },
+    {
+      "#": 2,
+      "category": "New Structure",
+      "item": "Metal Stud",
+      "qty": 32,
+      "unit": "pcs",
+      "unitPrice": 4.00,
+      "total": 128.00,
+      "type": "supporting"
+    },
+    {
+      "#": 3,
+      "category": "New Structure",
+      "item": "Corner Bead",
+      "qty": 11,
+      "unit": "pcs",
+      "unitPrice": 8.00,
+      "total": 85.33,
+      "type": "supporting"
+    },
+    {
+      "#": 4,
+      "category": "New Structure",
+      "item": "Joint Tape",
+      "qty": 6,
+      "unit": "roll",
+      "unitPrice": 6.00,
+      "total": 36.00,
+      "type": "supporting"
+    },
+    {
+      "#": 5,
+      "category": "New Structure",
+      "item": "Flaxi 20kg",
+      "qty": 2,
+      "unit": "bag",
+      "unitPrice": 30.00,
+      "total": 60.00,
+      "type": "supporting"
+    },
+    {
+      "#": 6,
+      "category": "New Structure",
+      "item": "Screw (Box)",
+      "qty": 1,
+      "unit": "box",
+      "unitPrice": 25.00,
+      "total": 25.00,
+      "type": "supporting"
+    },
+    {
+      "#": 7,
+      "category": "Ceiling",
+      "item": "C213 Plaster Cornice 110mm",
+      "qty": 4,
+      "unit": "pcs",
+      "unitPrice": 25.00,
+      "total": 100.00,
+      "type": "main"
+    },
+    {
+      "#": 8,
+      "category": "Wall Panel",
+      "item": "PVC 10mm",
+      "qty": 7,
+      "unit": "pcs",
+      "unitPrice": 375.00,
+      "total": 2625.00,
+      "type": "main"
+    },
+    {
+      "#": 9,
+      "category": "Wall Panel",
+      "item": "MDF Board 6mm",
+      "qty": 1,
+      "unit": "pcs",
+      "unitPrice": 190.00,
+      "total": 190.00,
+      "type": "main"
+    },
+    {
+      "#": 10,
+      "category": "Wall Panel",
+      "item": "Acrylic Mirror Gold 2mm",
+      "qty": 1,
+      "unit": "pcs",
+      "unitPrice": 710.00,
+      "total": 710.00,
+      "type": "main"
+    },
+    {
+      "#": 11,
+      "category": "Wall Panel",
+      "item": "Masking Tape 2\" (Bundle)",
+      "qty": 1,
+      "unit": "bundle",
+      "unitPrice": 10.00,
+      "total": 10.00,
+      "type": "supporting"
+    },
+    {
+      "#": 12,
+      "category": "Wall Panel",
+      "item": "X-Bond 500ml",
+      "qty": 6,
+      "unit": "tube",
+      "unitPrice": 15.00,
+      "total": 90.00,
+      "type": "supporting"
+    },
+    {
+      "#": 13,
+      "category": "Wall Panel",
+      "item": "Super Glue 10g (Box)",
+      "qty": 1,
+      "unit": "box",
+      "unitPrice": 90.00,
+      "total": 90.00,
+      "type": "supporting"
+    },
+    {
+      "#": 14,
+      "category": "Wall Panel",
+      "item": "Silicon Sealant (Paintable)",
+      "qty": 3,
+      "unit": "tube",
+      "unitPrice": 10.00,
+      "total": 30.00,
+      "type": "supporting"
+    },
+    {
+      "#": 15,
+      "category": "Wall Finishes",
+      "item": "PVC 100mm (Skirting)",
+      "qty": 4,
+      "unit": "pcs",
+      "unitPrice": 27.00,
+      "total": 108.00,
+      "type": "main"
+    },
+    {
+      "#": 16,
+      "category": "Furniture",
+      "item": "VACUUM Russell Taylors CW-800",
+      "qty": 1,
+      "unit": "unit",
+      "unitPrice": 600.00,
+      "total": 600.00,
+      "type": "main"
+    },
+    {
+      "#": 17,
+      "category": "Lighting",
+      "item": "COB LED Strip Light 240V with AC",
+      "qty": 5,
+      "unit": "rolls",
+      "unitPrice": 75.00,
+      "total": 375.00,
+      "type": "main"
+    },
+    {
+      "#": 18,
+      "category": "Lighting",
+      "item": "Set Cable Wire 1.5mm (Untuk Lampu)",
+      "qty": 1,
+      "unit": "set",
+      "unitPrice": 280.00,
+      "total": 280.00,
+      "type": "supporting"
+    },
+    {
+      "#": 19,
+      "category": "Lighting",
+      "item": "Suis (White/Black/Gold)",
+      "qty": 2,
+      "unit": "pcs",
+      "unitPrice": 60.00,
+      "total": 120.00,
+      "type": "supporting"
+    },
+    {
+      "#": 20,
+      "category": "Paint",
+      "item": "JOTUN Matt 0001 White",
+      "qty": 5,
+      "unit": "tong 1L",
+      "unitPrice": 28.00,
+      "total": 140.00,
+      "type": "main"
+    },
+    {
+      "#": 21,
+      "category": "Paint",
+      "item": "JOTUN Matt 10966 Almond Beige",
+      "qty": 5,
+      "unit": "tong 1L",
+      "unitPrice": 28.00,
+      "total": 140.00,
+      "type": "main"
+    },
+    {
+      "#": 22,
+      "category": "Paint",
+      "item": "JOTUN Matt 0566 Mangolia",
+      "qty": 5,
+      "unit": "tong 1L",
+      "unitPrice": 28.00,
+      "total": 140.00,
+      "type": "main"
+    },
+    {
+      "#": 23,
+      "category": "Paint",
+      "item": "Dulux Primer 1L",
+      "qty": 15,
+      "unit": "tong 1L",
+      "unitPrice": 30.00,
+      "total": 450.00,
+      "type": "supporting"
+    },
+    {
+      "#": 24,
+      "category": "Paint (Panel)",
+      "item": "JOTUN Matt 0001 White",
+      "qty": 5,
+      "unit": "tong 1L",
+      "unitPrice": 28.00,
+      "total": 140.00,
+      "type": "main"
+    },
+    {
+      "#": 25,
+      "category": "Paint (Panel)",
+      "item": "JOTUN Matt 0099 Black",
+      "qty": 5,
+      "unit": "tong 1L",
+      "unitPrice": 28.00,
+      "total": 140.00,
+      "type": "main"
+    },
+    {
+      "#": 26,
+      "category": "Site Preparation",
+      "item": "Canvas 6' x 80'",
+      "qty": 1,
+      "unit": "pcs",
+      "unitPrice": 92.00,
+      "total": 92.00,
+      "type": "main"
+    },
+    {
+      "#": 27,
+      "category": "Site Preparation",
+      "item": "Roro Bin",
+      "qty": 1,
+      "unit": "pcs",
+      "unitPrice": 280.00,
+      "total": 280.00,
+      "type": "main"
+    },
+    {
+      "#": 28,
+      "category": "Site Preparation",
+      "item": "Set Scaffolding",
+      "qty": 3,
+      "unit": "pcs",
+      "unitPrice": 200.00,
+      "total": 600.00,
+      "type": "main"
+    },
+    {
+      "#": 29,
+      "category": "Site Preparation",
+      "item": "Penginapan Installer",
+      "qty": 5,
+      "unit": "pcs",
+      "unitPrice": 250.00,
+      "total": 1250.00,
+      "type": "main"
+    },
+    {
+      "#": 30,
+      "category": "Site Preparation",
+      "item": "Penginapan Staff",
+      "qty": 2,
+      "unit": "pcs",
+      "unitPrice": 200.00,
+      "total": 400.00,
+      "type": "main"
+    },
+    {
+      "#": 31,
+      "category": "Labour",
+      "item": "New Structure (Wall)",
+      "qty": 174.0,
+      "unit": "sqft",
+      "unitPrice": 11.00,
+      "total": 1914.00,
+      "type": "labour"
+    },
+    {
+      "#": 32,
+      "category": "Labour",
+      "item": "Wall Panel",
+      "qty": 190.4,
+      "unit": "sqft",
+      "unitPrice": 15.00,
+      "total": 2856.00,
+      "type": "labour"
+    },
+    {
+      "#": 33,
+      "category": "Labour",
+      "item": "Cat dekat Site – Standard Paint",
+      "qty": 374.1,
+      "unit": "sqft",
+      "unitPrice": 1.50,
+      "total": 561.14,
+      "type": "labour"
+    },
+    {
+      "#": 34,
+      "category": "Labour",
+      "item": "Wiring / Hacking",
+      "qty": 1,
+      "unit": "lot",
+      "unitPrice": 244.25,
+      "total": 244.25,
+      "type": "labour"
+    },
+    {
+      "#": 35,
+      "category": "Transport",
+      "item": "Lorry 10FT Delivery",
+      "qty": 1,
+      "unit": "trip",
+      "unitPrice": 1000.00,
+      "total": 1000.00,
+      "type": "transport"
+    }
+  ],
+  "excludedRows": [
+    "Rows containing 'Termasuk dalam' or '→' (pointer rows)",
+    "Rows with qty = 0 AND total = 0",
+    "Section/sub-header text: GYPSUM / CEMENT BOARD, PLYWOOD, PVC BOARD, QTY LEBIHKAN, KALAU <10: TAMBAH 2, YANG LAIN, Masukkan Spec, Insert Item, Insert Paint Code, Spec",
+    "Summary/label rows: TOTAL PROJECT, BATCH 1, JOB COST, SUMMARY OF TPC, TOTAL INSTALLATION, COTIGENCY",
+    "Cells containing #DIV/0!",
+    "The literal 25900.00 that leaks into the Screw (Box) SQFT column (template artifact)"
+  ],
+  "metadata": {
+    "sourceFile": "masjid-jamek.xlsx",
+    "description": "Ground-truth fixture for DSG Excel template parser testing",
+    "createdAt": "2025-01-XX",
+    "tolerance": "± column-position tolerance allowed"
+  }
+}

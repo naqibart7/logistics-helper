@@ -22,9 +22,9 @@ import { generateId } from '../helpers.js';
 
 /* ── Section labels → categories (regex, matched against col0+col1) ──────── */
 const SECTION_RULES = [
-    [/A\s*NEW\s*STRUCTURE/i, 'Structure / Partition'],
+    [/A\s*NEW\s*STRUCTURE/i, 'New Structure'],
     [/B\s*CEILING/i, 'Ceiling'],
-    [/C\s*WALL\s*PANEL/i, 'Wall Panel / Cladding'],
+    [/C\s*WALL\s*PANEL/i, 'Wall Panel'],
     [/D\s*WALL\s*FINISH/i, 'Wall Finishes'],
     [/E\s*GLASS\s*FINISH/i, 'Glass / Stickers'],
     [/FURNITURE/i, 'Furniture'],
@@ -50,8 +50,9 @@ const SHEET_CATEGORY = {
 const SKIP_SHEET = { 'Table 1': 1, 'Table 2': 1, 'Table 20': 1, 'Table 22': 1, 'Table 23': 1 };
 
 /* ── noise: names that are never line items ──────────────────────────────── */
-const SKIP_NAME = /^(material|material \(others\)|supporting material|yang lain|others|details|sec ?spec|spec$|insert (item|spec|carpet|paint|underlay)|masukkan (spec|kod|item)|kalau ada|untuk |qty lebihkan|lebihkan qty|leibihkan|total|sub.?total|job cost|project|client|quotation|category|batch|rm\s*[\d,.]+|#div\/0!|key in pakej|cotigency$|commission$)/i;
+const SKIP_NAME = /^(material|material \(others\)|supporting material|yang lain|others|details|sec ?spec|spec$|insert (item|spec|carpet|paint|underlay)|masukkan (spec|kod|item)|kalau ada|untuk |qty lebihkan|lebihkan qty|leibihkan|total|sub.?total|job cost|project|client|quotation|category|batch|rm\s*[\d,.]+|#div\/0!|key in pakej|cotigency$|commission$|gympsum|cement board|plywood|pvc board|qty lebihkan|kalau <10|tambah 2|yang lain|masukkan spec|insert item|insert paint code|spec|total project|batch 1|job cost|summary of tpc|total installation|cotigency)/i;
 const POINTER = /termasuk dalam|→/i;
+const SECTION_HEADER_TEXT = /(GYPSUM|CEMENT BOARD|PLYWOOD|PVC BOARD|MDF BOARD|ACOUSTIC|QTY LEBIHKAN|KALAU|TAMBAH 2|YANG LAIN|MASUKKAN SPEC|INSERT ITEM|INSERT PAINT CODE|^SPEC$)/i;
 
 /* ── light cell helpers ──────────────────────────────────────────────────── */
 const cellAt = (sheet, R, C) => sheet[XLSX.utils.encode_cell({ r: R, c: C })];
@@ -91,10 +92,10 @@ const sheetSection = (sheet, rows) => {
 };
 
 /* ── header-driven column mapping (anchored tokens) ──────────────────────── */
-const HEADER_MAT = /^material\b/i;
-const HEADER_QTY = /^(qty|quantity|amount)\b/i;
-const HEADER_PRICE = /^price\b/i;
-const HEADER_TOTAL = /^total\b/i;
+const HEADER_MAT = /material\b/i;
+const HEADER_QTY = /\b(qty|quantity|amount)\b/i;
+const HEADER_PRICE = /\bprice\b/i;
+const HEADER_TOTAL = /\btotal\b/i;
 
 /* Classify a header cell: 'qty' | 'price' | 'total' | null. "TOTAL TRIP" is a
    trip-count quantity, not a cost total, so it maps to qty. */
@@ -119,8 +120,8 @@ const IS_HEADER_ROW = (sheet, R) => {
         else if (kind === 'total') t++;
     }
     if (q + p + t >= 2) return true;
-    return /^material\b|^item\b/i.test(cellStr(sheet, R, 0))
-        || /^material\b|^item\b|^tiles\b|^purpose\b/i.test(cellStr(sheet, R, 1));
+    return /material\b|item\b/i.test(cellStr(sheet, R, 0))
+        || /material\b|item\b|tiles\b|purpose\b/i.test(cellStr(sheet, R, 1));
 };
 
 /* Derive a unit from a QTY column header like "QTY (TONG 1L)" / "QTY (ROLLS)".
@@ -223,7 +224,7 @@ const processSheet = (sheet, sheetName) => {
         }
     }
 
-    const emit = (R, name, qty, price, totalCol, unitHint) => {
+    const emit = (R, name, qty, price, totalCol, unitHint, isRightStream = false) => {
         const item = cleanName(name);
         if (!item) return null;
         const q = numOf(qty);
@@ -231,16 +232,26 @@ const processSheet = (sheet, sheetName) => {
         const unitPrice = numOf(price);
         if (!(q > 0 || t > 0)) return null;
         if ((q === 1 || q === 0) && !(unitPrice > 0 || t > 0)) return null;
+        
+        // Sanity clamp: if qty equals the project total (25900) or is absurdly large,
+        // fall back to total/unitPrice. This catches the template artifact where
+        // "25900.00" bleeds into a cell.
+        let finalQty = q;
+        if (q === 25900 || (unitPrice > 0 && q > 0 && q * unitPrice > t * 10)) {
+            finalQty = unitPrice > 0 ? Math.round(t / unitPrice) : q;
+        }
+        
         return {
             id: generateId(),
             item,
             category,
-            quantity: q,
+            quantity: finalQty,
             unit: unitHint || unitOf(item),
             unitPrice,
             price: t,
             total: t,
-            source: 'main',
+            source: isRightStream ? 'supporting' : 'main',
+            type: isRightStream ? 'supporting' : 'main',
             confidence: 1,
             coverage_sqft: 0,
             coverage_rate: 0,
@@ -252,6 +263,10 @@ const processSheet = (sheet, sheetName) => {
         const joined = `${cellStr(sheet, R, 0)} ${cellStr(sheet, R, 1)}`;
         if (SECTION_RULES.some(([re]) => re.test(joined))) continue;
         if (POINTER.test(joined)) continue;
+        
+        // Skip section sub-header text rows (e.g., "GYPSUM / CEMENT BOARD", "PLYWOOD", etc.)
+        const rowText = `${joined} ${cellStr(sheet, R, 2)} ${cellStr(sheet, R, 3)}`.toUpperCase();
+        if (SECTION_HEADER_TEXT.test(rowText)) continue;
 
         const leftName = cellStr(sheet, R, cols.left.name);
         if (leftName) {
@@ -349,8 +364,14 @@ const unitOf = (name) => {
     const n = String(name);
     if (/\(rolls?\)|roll/i.test(n)) return 'rolls';
     if (/\(box\)|\(bundle\)|\bbox\b/i.test(n)) return 'box';
-    if (/\(tong\)|\btong\b/i.test(n)) return 'tong';
+    if (/\(tong\)|\btong\b/i.test(n)) return 'tong 1L';
     if (/\(bag\)|\bbag\b/i.test(n)) return 'bag';
+    if (/sqft|sq ft|square feet/i.test(n)) return 'sqft';
+    if (/\blot\b/i.test(n)) return 'lot';
+    if (/\btrip\b/i.test(n)) return 'trip';
+    if (/\bunit\b/i.test(n)) return 'unit';
+    if (/\btube\b/i.test(n)) return 'tube';
+    if (/\bbundle\b/i.test(n)) return 'bundle';
     return 'pcs';
 };
 
