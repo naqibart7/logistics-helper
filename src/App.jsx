@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
 import { ProjectsPage } from './pages/ProjectsPage'
 import { ProjectDetailPage } from './pages/ProjectDetailPage'
+import { SuppliersPage } from './pages/SuppliersPage'
 
 function Layout({ children }) {
   return (
@@ -13,6 +14,9 @@ function Layout({ children }) {
             </Link>
             <Link to="/" className="text-sm text-gray-600 hover:text-blue-600">
               Projects
+            </Link>
+            <Link to="/suppliers" className="text-sm text-gray-600 hover:text-blue-600">
+              Suppliers
             </Link>
           </nav>
         </div>
@@ -30,6 +34,7 @@ export default function App() {
       <Layout>
         <Routes>
           <Route path="/" element={<ProjectsPage />} />
+          <Route path="/suppliers" element={<SuppliersPage />} />
           <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
         </Routes>
       </Layout>
