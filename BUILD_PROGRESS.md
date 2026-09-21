@@ -431,3 +431,8 @@ the directory on first app open (no-op if already populated). SuppliersScreen br
 export/import unchanged — the seed is the starting directory, not a replacement for runtime
 management. `tests/supplierSeed.test.js` (5 tests): loads all, idempotent, required fields,
 phone presence, tags mapping. 113/113 green, build green.
+
+## Deployment ✅ (2026-09-21)
+- **Review & Test:** Ran Vitest suite (121/121 tests pass) and Vite build (green).
+- **Push:** Force pushed recent local snapshot history to `origin master`.
+- **Deploy:** Deployed to Vercel production: https://material-logi.vercel.app
