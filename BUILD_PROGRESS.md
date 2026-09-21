@@ -307,8 +307,121 @@ Agent 6/7 BOM producers, multi-user backend. (PO PDF + WhatsApp landed in Task F
 - Redeploy 2026-09-17 (Slice 9): 108/108 green, build green, pushed to A7SForce/Material-Logi + redeployed production Ready.
 - Redeploy 2026-09-17 (supplier seed): 113/113 green, build green, pushed (ed8a42f) + redeployed production Ready.
 
+## Extension docs & Phase 2 planning ✅ (imported 2026-09-21)
+Three planning documents + one Lane 0 verification report imported from outside the repo
+and placed in `docs/extension/`. These are Phase 1 (Work Map) → Phase 2 (Architecture) of the
+v3 extension, covering the bot, sync, stock, payment voucher, check-in drafter, and build lanes.
+They contain no code and do not touch invariants.
+
+| File | Purpose |
+|---|---|
+| `docs/extension/Work_Map_and_System_Plan_v2.md` | Phase 1 (Deep Brainstorming). Everyday-work map, 4-bucket sort, constraints, core insights, v3 backlog, bot draft, open items. |
+| `docs/extension/Architecture_v1_Logistics_Helper_v3_Extension.md` | Phase 2 (System Architecture). 13-part plan: components, data additions, sync design, bot design, format mappings, build lanes 0→Q+6a, decisions D1–D10, security, Payment Voucher Appendix A map, agent guardrail prompts. |
+| `docs/extension/Logistics_Helper_v3_Open_Items_Resolved_2026-09-21_v2.md` | Status tracker. Weekly Report template (RESOLVED from real files), baseline correction, balance-reminder style revised (start with in-app badge), 6-item status table + next actions for Naqib. |
+| `docs/extension/Lane0_Verification_Report_2026-09-21.md` | **Lane 0 DONE (no code).** Verified answers to the 5 architecture questions, taken from live code: change-log schema (7 fields, timestamp+projectId present, no BomItem FK — §Q1), browser-only-IndexedDB storage (§Q2), current import/post-import UI state (§Q3), missing-item → `removed_item_pending` (§Q4, RESOLVED), per-lane file+invariant matrix (§Q5). Resolves 2 rows of the Open Items §6 table (change log + blocked locked attempts: confirmed NOT permanently logged). |
+
+### Lane 0 resolved facts (for quick reference)
+1. **ChangeLogEntry = 7 fields.** `{id, projectId, timestamp (ISO), actor, field ("Item :: fieldName"), oldValue, newValue}`. Every entry carries `projectId` + `timestamp`. No BomItem FK — item identity is the `field` string prefix. Code: [changeLogRepo.js](file:///d:/Desktop/Material_logi/src/data/changeLogRepo.js#L8-L23), [schema.js](file:///d:/Desktop/Material_logi/src/data/schema.js#L21-L22).
+2. **Storage = Dexie / IndexedDB only.** Clear browser data → everything lost. No server, no cloud, no sync. Safety net today: BOM PDF export + PO PDF export + Supplier CSV export. Code: [db.js](file:///d:/Desktop/Material_logi/src/data/db.js#L1-L11).
+3. **Locked-field blocked attempts = NOT permanently logged.** They live only in runtime `MergeResult.skippedLocked[]` (lines 102–104 of mergeEngine.js). Evidence vanishes after the import finishes. Lane 1A may optionally persist them if desired. Code: [mergeEngine.js](file:///d:/Desktop/Material_logi/src/logic/mergeEngine.js#L99-L105).
+4. **Missing items on re-import = `removed_item_pending` (RESOLVED, per §3.4 of Open Items).** BomItem stays, Confirm row blocks PO, Approve = delete, Dismiss = keep. Idempotency guard = no duplicate pendings. Code: [mergeEngine.js](file:///d:/Desktop/Material_logi/src/logic/mergeEngine.js#L147-L168).
+5. **`isManual` protection = decision needed, two implementation paths documented** in Lane 0 §Q4 + §Q5 matrix. Option A = `reimportProject.js` wrapper (merge untouched). Option B = 1-line guard in `mergeEngine.js` missing-items loop (explicit lane-approval required per Architecture invariant 2).
+
+### Lane order (post-Lane-0, hybrid as chosen)
+Lane 0 ✅ → Lane 1A (Trust pass / scorecard) + Lane 1B (Manual add-item / `isManual`) → Lane 2 (Sync+backup) → Lane 3 (Stock record pilot). Lanes 4–5 + 6a provisional; Lane 6a (minimal Telegram bot) approved for parallel start (D4, does not touch v3). Lane Q (QA) after every lane.
+
+## Lane 1B — Manual add-item + Option A quarantine ✅ (2026-09-21, 8 new tests, 121/121 green, build green)
+**Scope** (per Work Map §7.3 + Architecture Part 8 Lane 1B):
+- Phone-first single-screen Add item: item + spec + qty + unit (required); one-tap reason tag
+  (site / missing / correction); optional category / notes; auto-timestamp addedAt.
+- Confirmed immediately — never queued as new_item_pending. `displayOrder = max+1` so
+  new rows land at bottom of BOM.
+- **Provenance fields on BomItem (Dexie `db.version(4)` upgrade, nullable, non-indexed):**
+  `isManual` (bool, `true` = hand-added, never null after a write), `source` ("manual"/"import"),
+  `reasonTag` (site feeds the later drafter's late-request count), `addedAt` (ISO).
+  Schemaless fields for existing rows (null); `defaultBomItem` gating to prevent wrong-shape
+  (e.g. `isManual: partial.isManual === true ? true : null`).
+- **Option A protection (mergeEngine untouched per Architecture invariant 2):**
+  `reimportProject.js` shims `deps.listBomItems` with a filter that hides `isManual === true`
+  rows from the merge engine's `missing-items loop` (Lane 0 §Q4 says the loop iterates rows
+  received via `deps.listBomItems(projectId)` → filter there is the **entire** protection).
+  Returns `manualQuarantined` as instrumentation. No changes to `mergeEngine.js`, `poGate.js`,
+  `supplierLinking.js`, or `poDocument.js` — invariant #2 holds.
+- **Changelog prove-it:** every manual add writes a ChangeLogEntry: `actor=supervisor`,
+  `field = "ItemName :: manual_add (reasonTag)"`, `oldValue=null`,
+  `newValue = "added qty N unit — spec"`. Timestamps + projectId already on every entry
+  (Lane 0 §Q1 verified).
+- **UI flow:** BOM tab header gains a "+ Add item" button (between Export and Suppliers view).
+  Opens `AddItemScreen` as an in-project sub-screen in App.jsx (`subScreen='addItem'` stack
+  state — preserves project/tab context, tab bar stays rendered with BOM highlighted,
+  Back + Cancel both return to BOM and trigger a reload.
+
+**Files touched:**
+- [schema.js](file:///d:/Desktop/Material_logi/src/data/schema.js) — MANUAL_REASON_TAGS, JSDoc for new fields; `defaultBomItem()` gated write of all 4 new fields.
+- [db.js](file:///d:/Desktop/Material_logi/src/data/db.js#L34-L38) — Dexie `db.version(4)` upgrade (stores unchanged; Dexie allows non-indexed fields transparently).
+- [bomRepo.js](file:///d:/Desktop/Material_logi/src/data/bomRepo.js#L86-L165) — `addManualItem` (validation → create → set display order → changelog append). `default` export updated.
+- [reimportProject.js](file:///d:/Desktop/Material_logi/src/logic/reimportProject.js#L9-L58) — Option A filter shim over listBomItems; returns `manualQuarantined`; merge engine 0 lines touched.
+- [AddItemScreen.jsx](file:///d:/Desktop/Material_logi/src/screens/AddItemScreen.jsx) — new (phone-first single screen, 48px buttons, submit disabled until ready, per-field copy, reason radio-tap trio).
+- [App.jsx](file:///d:/Desktop/Material_logi/src/App.jsx#L8-L163) — imports AddItemScreen, new `subScreen` stack state, renders AddItem sub-screen above tab bar, passes `onAddItem` prop to BomScreen.
+- [BomScreen.jsx](file:///d:/Desktop/Material_logi/src/screens/BomScreen.jsx#L77-L416) — signature + button (`+ Add item`). One ARIA disambiguation fix: Flat-view "All" button now carries `aria-label="All items flat view"` to keep TestingLibrary / BomScreen callers unique (resolves the `bomCountConsistency.test.jsx` collision caused by the new +Add button).
+- [manualAddItem.test.js](file:///d:/Desktop/Material_logi/tests/manualAddItem.test.js) — 8 NEW tests covering provenance field writes, validation (4 empty-field throws), invalid reasonTag fallback + addedAt not overridable, displayOrder increments, `manual-only → 0 removed_pending`, `mixed project → manual protected AND absent-imported → still removed_pending`, reimport idempotency (no duplicate removed_pending after 2nd run with empty import), and merge semantics intact (price updates still apply on imported rows while manual rows remain untouched).
+- [bomCountConsistency.test.jsx](file:///d:/Desktop/Material_logi/tests/bomCountConsistency.test.jsx#L53-L112) — fix only: all 3 renders now pass `onAddItem={() => {}}` stub; flat-view selector uses the unique `All items flat view` aria-label. No test semantics changed.
+
+**QA:**
+```
+npx vitest run →  32 files, 121 tests PASS  (was 113)
+npx vite build →  455 modules, 4.13s green  (was 454)
+```
+
+## Lane 6a — Minimal Telegram Daily Report bot ✅ (2026-09-21, separate repo `d:\Desktop\lh_bot_6a`, 11/11 tests pass)
+**Scope** (Architecture Part 8 Lane 6a): private Telegram chat with Naqib, one end-of-day
+10-topic check-in, drafts the Daily Report in the EXACT character-for-character Malay-headings
+format, sends draft back to chat for manual edit + copy-post. Never auto-posts.
+
+**Design decisions / invariants held:**
+- **Parallel-approved, no v3 touch:** lives in `d:\Desktop\lh_bot_6a\`, separate repo.
+- **Bot token from env only:** `TELEGRAM_BOT_TOKEN` from `.env` (`.env.example` template provided; never in code, never in JSON). `TELEGRAM_ALLOWED_USER_ID` gate → 0 = allow any private chat (dev-only), else numeric = only that user.
+- **No bank details ever:** storage `assertSafe` walks primitives before writing JSON; 12+ consecutive-digit user strings are refused (except storage-controlled fields: `id`, `createdAt`, `updatedAt`, `addedAt`, `date`, `sourceCheckins`). Also checked inline in the answer handler before accept.
+- **Never guess, never auto-post:** blank answers → `-` placeholder in format; obstacles only render the `defaultIfEmpty = Tiada` when explicitly configured AND the answer is empty; real answers always win. Draft is echoed into chat with "semak, edit, copy-paste hantar sendiri" preamble.
+- **Data-driven topics:** edit `data/topics.json` (10 daily, 2 Mon/Fri refresh) — no rebuild.
+- **One gentle reminder:** per-day, per-chat state in `reminders.json`; after 21:30 local + not yet drafted + not mid-check-in, a single `/eod` nudge fires.
+
+**Bot commands:** `/start`, `/eod`, `/projects`, `/batal`, `/skip` (optional-only), `/remindme`, `/done` (project list close).
+
+**Repo map:**
+```
+d:\Desktop\lh_bot_6a\
+├── README.md                  run guide, scope, commands, deploy notes
+├── package.json               node ≥20, start/test scripts, dotenv + node-telegram-bot-api
+├── .env.example               TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_USER_ID, DATA_DIR
+├── .gitignore                 node_modules / .env / data/*.json (except example)
+├── data/
+│   ├── topics.json            10 daily topics + Mon/Fri project refresh config
+│   └── projects.example.json  example starter list (11-test fixture)
+├── src/
+│   ├── storage.js             4-bucket JSON storage with 12-digit bank-details guard
+│   ├── dailyReport.js         pure fn → character-for-character Daily Report build
+│   └── bot.js                 command handler, state machine, callable test interface, wire()
+└── tests/
+    └── all.test.js            11 tests using makeTestBot() callable interface
+```
+
+**Tests (11/11 pass via `npm test` = `node --test tests/`):**
+1. `formatDate` — dd/m/yyyy no leading zeros
+2. Daily Report empty-all headings LITERAL match + `Tiada` default applied only when configured
+3. Real answers pass through untouched, no "Generated by" / [insert] placeholders
+4. Malay headings are never translated (strict line identity check)
+5. Obstacles defaultIfEmpty semantics: no-default → no Tiada, with-default → Tiada, real-answer wins
+6. Storage refuses user strings with 12+ consecutive digits; RM 210 / epoch-milli ids / dates all pass
+7. E2E full 10-answer check-in → draft rendered with every answer
+8. Bank-digit answer sent mid-check-in → refused, check-in stays on the same topic
+9. `/skip` on a non-optional topic → "wajib / tak boleh" reply, not skipped
+10. Project list refresh via `/projects` → 2 lines → `/done` → 2 rows saved + echoed
+11. `topics.json` has all 10 required ids + Mon/Fri refresh blocks
+
 ## Run
 `npm install --legacy-peer-deps` · `npm run dev` · `npx vitest run` · `npx vite build`
+**Lane 6a run:** `cd d:\Desktop\lh_bot_6a ; npm install ; cp .env.example .env` (fill the token), then `npm start`. Run tests: `npm test`.
 
 ## Supplier library seed ✅ (2026-09-17, CSV import)
 130 unique suppliers parsed from `suppliers_2026-09-15.csv` (133 rows, 3 duplicates removed).

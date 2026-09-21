@@ -31,6 +31,12 @@ db.version(2).stores(STORES).upgrade(async (tx) => {
 // Fresh databases already carry it via STORES; upgraded ones gain it here.
 db.version(3).stores(STORES);
 
+// v4: Lane 1B BomItem provenance fields (isManual, source, reasonTag, addedAt).
+// No index changes needed — fields are non-indexed, nullable, never merged.
+// Dexie allows schema-consistent new fields on existing rows via plain writes,
+// so the upgrade is a no-op on existing data (null fields read as null).
+db.version(4).stores(STORES);
+
 /** Close the DB (used by tests to simulate "close the app"). */
 export const closeDb = () => db.close();
 

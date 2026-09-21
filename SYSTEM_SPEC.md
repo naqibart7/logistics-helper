@@ -199,8 +199,9 @@ Mobile-first: bottom-30% primary actions, deterministic progress text, specific 
   console.logs removed; 3 debug test files deleted. `redesignUi` PO-tab selector fixed
   for nested-span label structure.
 
-## Annex C — Agent Work Queue (ordered; pipeline + redesign + L/M + fast ordering + Task N + CSV + slice 8+9 done, verified 108/108 + prod build green)
+## Annex C — Agent Work Queue (ordered; pipeline + redesign + L/M + fast ordering + Task N + CSV + slice 8+9 done, verified 113/113 + prod build green)
 
+### Core v3 — DONE
 1. **~~Delete dead v1 files~~ DONE 2026-09-11 (Task B):** `src/utils/excelParser/dsgB.js`,
    `src/data/structuralKits.js`, `src/utils/coverageRules.js` deleted (empty parent dirs removed).
    `QuickKitPrompt.jsx` / `CoverageGate.jsx` never existed — verified absent. Zero references
@@ -214,14 +215,41 @@ Mobile-first: bottom-30% primary actions, deterministic progress text, specific 
 5. **~~Redesign~~ DONE 2026-09-11:** full pipeline in `docs/redesign/` (handoffs 01–07,
    summary, decision register, QA evidence, before/after shots). No logic/schema/gate
    changes; two evidence-found fixes (banner race, WhatsApp copy).
-5. **Adopt Zustand only if** a screen starts prop-drilling (D7); do not pre-empt.
+6. **Adopt Zustand only if** a screen starts prop-drilling (D7); do not pre-empt.
+
+### v3 Extension Phase 2/3 — Architecture v1 (see `docs/extension/Architecture_v1_Logistics_Helper_v3_Extension.md` Part 8)
+**Lane order:** Lane 0 ✅ → Lane 1A + 1B → Lane 2 → Lane 3 → Lanes 4/5 provisional → Lane 6a (parallel, outside v3). Run Lane Q (QA) after every lane.
+
+| Lane | Title | Status | Key files touched |
+|---|---|---|---|
+| **0** | Verify (no code) | ✅ **DONE 2026-09-21** — report in `docs/extension/Lane0_Verification_Report_2026-09-21.md` | None (read-only) |
+| **1A** | Trust pass tooling (import scorecard) | OPEN — passive overlay, no confirm tap | `importRunRepo.js` ✨, `importScorecard.js` ✨, schema (+ImportRun), db (+v4) |
+| **1B** | Manual add-item + `isManual` protection | OPEN — phone-first screen; `isManual` survives re-import (Option A/B decision pending) | `AddItemScreen.jsx` ✨, schema (+isManual/source/reasonTag/addedAt), **either** `reimportProject.js` wrapper (A) **or** `mergeEngine.js` guard (B, needs lane approval) |
+| **2** | Sync + backup (Dexie Cloud Option A recommended; spike first) | OPEN — step 0 = options compare (no code), step 1 = spike, step 2 = integrate + status, step 3 = backup/restore | New `src/logic/sync/` ✨ layer, schema (+SyncMeta + soft-delete flags), status badge everywhere |
+| **3** | Stock record (pilot, ~50 lines / 1 project) | OPEN — starting count, arrivals tap, predicted balance, key-item mins, doubtful weekly check | `stockRepo.js` ✨, `stockMovementRepo.js` ✨, `stockBalance.js` ✨, `StockScreen.jsx` ✨, schema (+StockItem/StockMovement + received qty fields) |
+| **4** | Supplier verification + Payment voucher drafter | OPEN (provisional) — verified flag/rating/leadtime, encrypted bank details, 14-field Monday.com voucher (Appendix A) with per-field copy cards | Extended `supplierRepo.js`, `paymentDraftRepo.js` ✨, `paymentVoucher.js` ✨, `PaymentVoucherScreen.jsx` ✨, encryption utility ✨, CSV import/export extended (BANK EXCLUDED from export) |
+| **5** | Ready tick + trip list + checklist PDF | OPEN (provisional) — per-line ready flag, ticked trip-list copy to Telegram, checklist PDF = to order / received / still missing (no prices) | `checklistPdf.js` ✨, `tripList.js` ✨, BomScreen ready tick, schema (+orderedQty/receivedQty/readyFlag/readyAt + Trip) |
+| **6a** | Minimal Telegram bot (Daily Report draft only) | OPEN, parallel-approved (D4, does not touch v3) | **Separate repo ✨** outside v3. Private bot chat, end-of-day check-in, data-driven topic list, project list refreshed Mon/Fri, one reminder, character-for-character Daily Report format match, never auto-post, never guess, token outside code. |
+| **Q** | QA (after every lane) | N/A — mandatory gate | Full suite green + build green + real-fixture check + short `BUILD_PROGRESS.md` entry |
+
+**Extension invariants (from Architecture v1 Part 2):**
+- Local-first. v3 works offline; cloud = copy, not boss.
+- Additive only. Do **not** modify `mergeEngine.js`, `poGate.js`, `supplierLinking.js`, or `poDocument.js` unless a lane explicitly says so AND Lane 0 confirms the need.
+- Follow the v3 pattern: data (`src/data/*Repo.js`), logic (`src/logic/*`), thin UI (`src/screens/*`).
+- Schema changes → Dexie version bump with tested migration (as with displayOrder v2 and presets v3).
+- No silent overwrites or silent deletions. Every change timestamped.
+- Human in the loop. PO, WhatsApp, Telegram, Monday.com text = always drafts. Never auto-send.
+- <2 minutes a day of user effort.
+- Bank details: encrypted at rest, masked in UI, never in PDFs/exports/logs/bot/AI prompts.
+- Every lane ends with: passing tests · green build · short `BUILD_PROGRESS.md` entry.
 
 ## Annex D — Sources & Supersession
 
+### Normative sources (core v3)
 - Upstream normative: `Material-Logi_System_Specification_v2.md` (Downloads, 2026-09-11).
   Superseded: v1.0.0 (`Material-Logi_System_Specification.md`, DSG-B-only world).
 - Execution plan: `logistics_helper_v3_build_pipeline.md` (5-agent split; consistent with this spec).
-- Build record: `BUILD_PROGRESS.md` (measured fixture table, test results, env fixes).
+- Build record: `BUILD_PROGRESS.md` (measured fixture table, test results, env fixes, extension lane summary).
 - Ground-truth fixtures: `tests/fixtures/Qwen_markdown_20260910_k171vvnlq.md`,
   `tests/fixtures/Surau_Darul_Dakwah_BOM_A7_Grounded_Sourcing.xlsx` — a true same-run pair
   (one Agent 6/7 run 2026-09-10, 52/6/14/5 in both; `parser.test.js` asserts deep equality).
@@ -230,6 +258,25 @@ Mobile-first: bottom-30% primary actions, deterministic progress text, specific 
   deep-equal to Qwen by wording).
   Plus `tests/fixtures/Artseven_BOM_Q260163_Kediaman_Puan_Hashima_v2.xlsx` — real
   inverted-order file (dashboard first, comma-less Master title; 11/4/7/7, title exact).
+
+### Extension planning documents (Phase 1→2, imported 2026-09-21)
+Placed in `docs/extension/`. Informative, not normative for core v3. Become normative lane-by-lane
+as each lane starts and Naqib confirms.
+
+| File | Phase | Role |
+|---|---|---|
+| `docs/extension/Work_Map_and_System_Plan_v2.md` | **Phase 1 (Brainstorming)** | Interviews → 4-bucket sort (Eliminate/Systemise/Optimise/Automate), work map ×7 areas, constraints, core insights, v3 backlog, bot/report drafter drafts, 13-item open list. Supersedes `Work_Map_and_Pilot_v1.md`. |
+| `docs/extension/Architecture_v1_Logistics_Helper_v3_Extension.md` | **Phase 2 (Architecture)** | 13 parts: plain-language overview, invariants, components (C1–C6), data additions (11 tables/fields), sync design options A/B/C/D + conflict rule + tests, bot schedule/answers/formats, 3 fixed daily formats + weekly format mapping, 9 build lanes 0→Q+6a, testing/security, decisions D1–D10, open items/do-not-assume, Payment Voucher Appendix A (14 fields ↔ v3 source), agent guardrail/lane prompts. |
+| `docs/extension/Logistics_Helper_v3_Open_Items_Resolved_2026-09-21_v2.md` | **Status tracker** | §1 Key-items decision table (draft, 12 + 2 blank rows). §2 Weekly Report template (RESOLVED character-for-character from real files). §3 Lane 0 code gaps (open before verification). §4 Baseline correction (paper tally now). §5 Balance reminder B revised (in-app badge first). §6 8-row status table. Next actions 1–5 for Naqib. |
+| `docs/extension/Lane0_Verification_Report_2026-09-21.md` | **Lane 0 OUTPUT** | 5 answered questions from live code: Q1 change-log 7 fields (timestamp+projectId verified), Q2 Dexie-only storage, Q3 post-import UI state, Q4 missing-item → removed_item_pending flow exact, Q5 per-lane file×invariant matrix. Resolves 2 rows of Open Items §6. Locked-field blocked attempts confirmed NOT permanently logged. |
+
+### Read order for agents working on Extension lanes
+1. `SYSTEM_SPEC.md` (this file) — Annex C (lane table) + Annex B (conformance deltas) + Annex E (Fast Ordering).
+2. `docs/extension/Architecture_v1_Logistics_Helper_v3_Extension.md` — Part 2 (invariants) → Part 8 (your lane) → Part 13 (guardrail prompt).
+3. `docs/extension/Lane0_Verification_Report_2026-09-21.md` — Q4 (isManual) + Q5 (files/risk) for your lane.
+4. `docs/extension/Logistics_Helper_v3_Open_Items_Resolved_2026-09-21_v2.md` — any open item that intersects your lane.
+5. `BUILD_PROGRESS.md` — latest entry, test count (113), env fixes, supplier seed note.
+6. **End of every lane:** `npx vitest run` → all green; `npx vite build` → green; 1-paragraph `BUILD_PROGRESS.md` entry with date.
 
 ## Annex E — Fast Supplier Ordering (Presets + One-Tap WhatsApp)
 

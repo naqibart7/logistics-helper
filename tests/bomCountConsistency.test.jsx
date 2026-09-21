@@ -50,10 +50,10 @@ describe('Ticket 8: BOM header count equals sum of group counts', () => {
     ];
     await bomRepo.bulkCreateBomItems(items);
 
-    render(<BomScreen projectId={project.id} />);
+    render(<BomScreen projectId={project.id} onAddItem={() => {}} />);
 
     // Switch to flat view first
-    fireEvent.click(screen.getByRole('button', { name: /All/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'All items flat view' }));
 
     // Wait for rows to render (async data load)
     await screen.findAllByRole('button', { name: /Edit purchase quantity/i });
@@ -81,7 +81,7 @@ describe('Ticket 8: BOM header count equals sum of group counts', () => {
     ];
     await bomRepo.bulkCreateBomItems(items);
 
-    render(<BomScreen projectId={project.id} />);
+    render(<BomScreen projectId={project.id} onAddItem={() => {}} />);
 
     // Wait for items to load first
     await screen.findAllByRole('button', { name: /Edit purchase quantity/i });
@@ -109,7 +109,7 @@ describe('Ticket 8: BOM header count equals sum of group counts', () => {
     ];
     await bomRepo.bulkCreateBomItems(items);
 
-    render(<BomScreen projectId={project.id} />);
+    render(<BomScreen projectId={project.id} onAddItem={() => {}} />);
 
     await screen.findAllByRole('button', { name: /Edit purchase quantity/i });
 

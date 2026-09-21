@@ -11,6 +11,14 @@
  *     never read by merge/itemMatcher; null = legacy row, sorts last)
  *   + assignedSupplierId: string | null (Fast Ordering — item → GlobalSupplier FK;
  *     set manually or via ItemSupplierPreset; never locked, never merged)
+ *   + isManual: bool | null (Lane 1B — true = hand-added; Option A reimport wrapper
+ *     quarantines these rows so merge never queues them as removed_item_pending.
+ *     Cosmetic marker only — merge/itemMatcher still exclude from MERGE_FIELDS.)
+ *   + source: "manual" | "import" | null (Lane 1B — provenance tag, never merged.)
+ *   + reasonTag: "site" | "missing" | "correction" | null (Lane 1B — one-tap reason.
+ *     "site" feeds the weekly late-request count in the bot drafter.)
+ *   + addedAt: string (ISO) | null (Lane 1B — automatic timestamp at manual-add time.
+ *     Never inferred/overwritten on re-import.)
  * ItemSupplierPreset { id (= itemKey), itemKey, globalSupplierId, updatedAt }
  *   (Fast Ordering — supervisor-set memory, global across projects)
  * ShortageConfirmItem { id, projectId, severity, issue, missingInfo,
@@ -21,6 +29,8 @@
  * ChangeLogEntry    { id, projectId, timestamp, actor: "agent" | "supervisor",
  *                     field, oldValue, newValue }
  */
+
+export const MANUAL_REASON_TAGS = ['site', 'missing', 'correction'];
 
 export const DB_NAME = 'logistics-helper-v3';
 
@@ -56,10 +66,14 @@ export const defaultBomItem = (partial = {}) => ({
   confidence: partial.confidence ?? null,
   notes: partial.notes ?? null,
   lockedFields: Array.isArray(partial.lockedFields) ? [...partial.lockedFields] : [],
-  // Cosmetic presentation order only. Never read by merge/itemMatcher (see D14).
   displayOrder: typeof partial.displayOrder === 'number' ? partial.displayOrder : null,
-  // Item → supplier assignment. Relational, not a value: never locked, never merged.
   assignedSupplierId: partial.assignedSupplierId ?? null,
+  // Lane 1B: provenance + protection. Never merged, never overwritten on re-import.
+  // isManual=true is the signal for the Option A reimport wrapper to quarantine.
+  isManual: partial.isManual === true ? true : null,
+  source: partial.source === 'manual' || partial.source === 'import' ? partial.source : null,
+  reasonTag: MANUAL_REASON_TAGS.includes(partial.reasonTag) ? partial.reasonTag : null,
+  addedAt: typeof partial.addedAt === 'string' ? partial.addedAt : null,
 });
 
 /** Fresh defaults for a new ShortageConfirmItem row. */

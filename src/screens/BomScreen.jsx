@@ -74,7 +74,7 @@ const SupplierPicker = ({ suppliers, value, itemName, onAssign }) => {
   );
 };
 
-export default function BomScreen({ projectId, onGoSuppliers }) {
+export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [projectName, setProjectName] = useState('');
@@ -397,13 +397,21 @@ export default function BomScreen({ projectId, onGoSuppliers }) {
         <button onClick={exportBom} disabled={exporting}>
           {exporting ? 'Exporting…' : 'Export BOM'}
         </button>
+        <button onClick={onAddItem} aria-label="Add item manually">
+          + Add item
+        </button>
         <button className="secondary" onClick={() => setView('supplier')} aria-pressed={view === 'supplier'}>
           Suppliers
         </button>
         <button className="secondary" onClick={() => setView('category')} aria-pressed={view === 'category'}>
           Category
         </button>
-        <button className="secondary" onClick={() => setView('flat')} aria-pressed={view === 'flat'}>
+        <button
+          className="secondary"
+          onClick={() => setView('flat')}
+          aria-pressed={view === 'flat'}
+          aria-label="All items flat view"
+        >
           All
         </button>
       </div>
