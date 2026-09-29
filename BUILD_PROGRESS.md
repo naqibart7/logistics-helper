@@ -531,4 +531,9 @@ Tue/Sun→project_briefing, asserted). **Slice 3 step 1 ✅** conversation engin
 topic-by-topic with Smart Skip, catch-up ping lists only real leftovers (silent when none).
 Sim-day proof: Tue fresh→4 midday topics; 2 early answers→2 left; catch-up shows exactly the
 leftovers; all-answered→silent. Deps reused from Teleport's install
-(python-telegram-bot 21.9, APScheduler 3.10.4). Remaining Slice 3: free-text topic matching.
+(python-telegram-bot 21.9, APScheduler 3.10.4). **Slice 3 ✅ step 2** free-text matching —
+`match_free_text()` in `conversation.py` (rule-based keyword overlap on title+prompt,
+stopwords removed; best-score wins, ties/zero stay silent — never guesses; 6/6 sim assertions:
+lalamove/supplier/isu/briefing matched, bare "Tiada" + off-topic ignored). No-PENDING branch of
+`on_text` now stores stray messages against the matched open topic. Lane 6a's JS logic wasn't
+available locally, so the design is ours (flagged in code). Slices 4–7 pending.

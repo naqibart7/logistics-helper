@@ -21,7 +21,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 
 from bot import config
 from bot.chunks import CHUNKS, topics_for_chunk
-from bot.conversation import pending_for_chunk, catchup_leftovers
+from bot.conversation import pending_for_chunk, catchup_leftovers, match_free_text
 from bot.scheduler import TOUCHPOINTS, label_for
 from bot.store import load_daily, save_daily, record_answer, now_kl_time
 from bot.topics import load_topics
@@ -127,7 +127,27 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     text = update.message.text.strip()
     if PENDING["topic"] is None:
-        log.info("Got text with no pending question (free-text matching lands later in Slice 3): %.60s", text)
+        # Free-text matching: check the stray message against every still-open
+        # topic (both chunks). Match → store + confirm; no match → stay silent.
+        topics = load_topics()
+        now = datetime.now(KL)
+        record = load_daily(today_iso())
+        open_topics = []
+        for chunk_id in ("midday", "lateAfternoon"):
+            for t in pending_for_chunk(
+                topics, topics_for_chunk(chunk_id),
+                record.get("chunks", {}).get(chunk_id, {}), now,
+            ):
+                open_topics.append((chunk_id, t))
+        hit = match_free_text(text, open_topics)
+        if hit is None:
+            log.info("Free text matched no open topic, ignoring: %.60s", text)
+            return
+        chunk_id, topic = hit
+        record_answer(record, chunk_id, now_kl_time(), **{topic["outputField"]: text})
+        path = save_daily(record)
+        log.info("Free-text matched %s -> %s in %s", topic["id"], text[:40], path)
+        await update.message.reply_text(f"Simpan ({topic['title']}): terima kasih!")
         return
     topic = PENDING["topic"]
     chunk_id = PENDING["chunk"]
