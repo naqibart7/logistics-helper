@@ -510,18 +510,25 @@ ports verbatim; Groq model-drift hazard; single-poller cutover). `telegram_bot_g
 three gaps superseded by v2. SYSTEM_SPEC Annex C: 1B + 6a rows corrected (both had shipped),
 Lane 2 updated, new **DB2** lane approved — **build next**. Zero v3 web-app code touched.
 
-## Daily Bot v2 — Slices 0–2 in build (2026-09-29, per-slice handoffs in dailybot/docs/build/)
+## Daily Bot v2 — Slices 0–3 in build (2026-09-29, per-slice handoffs in dailybot/docs/build/)
 **Slice 0 ✅** scaffold per Architecture §6 — `dailybot/data/` tree, topics.json copied verbatim
 (SHA-256 identical to the 6a source), `projects.json` seed `{"projects": []}`, runtime dirs
 gitignored (personal answers live on the Oracle VM, never in git). **Slice 1 ✅** touchpoint
 clock — `bot/scheduler.py` TOUCHPOINTS table + pure `due_touchpoints(now)`; fast-forwarded
 sim proof: one virtual week, 26/26 firing events at correct times in order (13:15/16:30/16:50/
 17:00 Mon–Sat + Mon 10:00 refresh-in + Fri 15:00 refresh-out; Sunday silent). Chunk weekdays
-defaulted Mon–Sat — flagged for Naqib. **Slice 2 code-complete** — Telegram wiring (dumb version):
-`chunks.py`, `topics.py`, `store.py` (§6.2 daily shape), `main.py` (APScheduler KL crons from
-TOUCHPOINTS, midday first-question send, reply→store, `/test`, `/status`). Live Stage-A proof:
-`getMe` 200 (@A7Prod_bot), all 6 jobs armed KL — then `sendMessage` **403 Forbidden**: Naqib has
-never started the bot's chat (Teleport's live triplet was never run either). **Slice 2 round-trip
-waits on one human step: Naqib opens @A7Prod_bot and presses Start.** Token-bearing run logs
-deleted + `logs_*.txt` gitignored before commit; `.env` gitignored and verified. Deps reused
-from Teleport's install (python-telegram-bot 21.9, APScheduler 3.10.4).
+defaulted Mon–Sat — flagged for Naqib. **Slice 2 ✅** Telegram wiring — `chunks.py`, `topics.py`,
+`store.py` (§6.2 daily shape), `main.py` (APScheduler KL crons, reply→store, `/test`, `/status`).
+Live proof: `getMe` 200 (@A7Prod_bot), 6 jobs armed KL; `sendMessage` was 403 until Naqib pressed
+Start, then full round-trip — midday question delivered, reply "Tiada" stored in
+`data/daily/2026-09-29.json` (`chunks.midday.weeklyMeeting` + `answeredAt`), confirmation sent.
+Token-bearing run logs deleted + `logs_*.txt` gitignored; `.env` gitignored and verified.
+**Bug caught live, fixed same day:** topics.json weekdays use the JS convention (`[1]`=Monday);
+Python compared its own convention, so the Mon-only question fired on Tuesday. Fix:
+`js_weekday = (weekday+1)%7` in `topics.py` + `conversation.py` (Mon→weekly_meeting,
+Tue/Sun→project_briefing, asserted). **Slice 3 step 1 ✅** conversation engine core —
+`bot/conversation.py` (pure `pending_for_chunk` + `catchup_leftovers`, no I/O), both chunks walk
+topic-by-topic with Smart Skip, catch-up ping lists only real leftovers (silent when none).
+Sim-day proof: Tue fresh→4 midday topics; 2 early answers→2 left; catch-up shows exactly the
+leftovers; all-answered→silent. Deps reused from Teleport's install
+(python-telegram-bot 21.9, APScheduler 3.10.4). Remaining Slice 3: free-text topic matching.
