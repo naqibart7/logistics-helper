@@ -52,12 +52,30 @@ def today_iso():
 
 
 async def send_midday_first_question(app):
-    """Send the midday chunk's first applicable question, remember it as pending."""
+    """Send the midday chunk's first applicable question (Smart Skip: skip if already answered today)."""
     topics = load_topics()
     now = datetime.now(KL)
-    topic = first_topic_for_chunk(topics, topics_for_chunk("midday"), now)
+    chunk_topic_ids = topics_for_chunk("midday")
+    daily = load_daily(today_iso())
+    answered_output_fields = {
+        k for k in daily.get("chunks", {}).get("midday", {})
+        if k != "answeredAt"
+    }
+    topic = None
+    for tid in chunk_topic_ids:
+        t = topics.get(tid)
+        if t is None:
+            raise ValueError(f"topics.json is missing topic {tid!r}")
+        wd = t.get("weekdays")
+        js_weekday = (now.weekday() + 1) % 7
+        if wd and js_weekday not in wd:
+            continue                      # weekday restriction not met today
+        if t["outputField"] in answered_output_fields:
+            continue                      # Smart Skip: already answered today
+        topic = t
+        break
     if topic is None:
-        log.warning("No applicable midday topic today — nothing sent.")
+        log.info("No applicable midday topic today (all applicable already answered) — nothing sent.")
         return
     chat_id = os.environ["NAQIB_CHAT_ID"]
     await app.bot.send_message(chat_id=chat_id, text=topic["prompt"])
