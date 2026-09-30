@@ -562,3 +562,16 @@ answers** (10 Mon + 9×5) and produced a real `.docx` — re-opened: all 6 numbe
 `config.REPORTS_DIR` at call time (was import-time — blocked test redirection);
 `weekly.compile_week()` extracted so a non-`today` week can be compiled. Slice 7 pending
 (Oracle VM deploy).
+
+**Slice 7 prep ✅** — deploy artifacts written (mirroring Teleport's proven setup):
+`dailybot/Dockerfile` (python:3.12-slim, `python -m bot.main`), `docker-compose.yml`
+(`container_name: naqib-daily-bot`, bind-mounted `./data`, no ports, `restart:
+unless-stopped`), `.dockerignore` (excludes `.env` + `data/` + logs/tests), `.env.example`
+(no secrets; root `.gitignore` gained `!.env.example` so it's tracked), and `DEPLOY.md`
+(step-by-step guide). `requirements.txt` gained `tzdata` (the slim base image lacks the
+KL tz database — `ZoneInfo("Asia/Kuala_Lumpur")` would raise without it). `docker compose
+config` validates (resolves `.env` → 6 vars). **Live VM deploy remains BLOCKED on Naqib:**
+(a) OCI Always Free VM signup/SSH (Teleport prepped the key but the instance was never
+created) and (b) the BotFather token decision (v2 currently reuses Teleport's @A7Prod_bot;
+single-poller rule forces a cutover — new token recommended). Docker Desktop isn't running
+locally, so the image build completes on the VM in Phase 4 of DEPLOY.md.

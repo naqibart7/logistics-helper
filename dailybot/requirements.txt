@@ -6,3 +6,7 @@ APScheduler==3.10.4
 openai>=1.0
 python-docx>=1.1
 python-dotenv>=1.0
+
+# Slice 7 — the python:3.12-slim base image ships no tz database; ZoneInfo
+# ("Asia/Kuala_Lumpur") needs it on Linux (no-op on Windows/macOS).
+tzdata>=2024.1

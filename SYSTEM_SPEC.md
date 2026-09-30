@@ -234,7 +234,8 @@ Mobile-first: bottom-30% primary actions, deterministic progress text, specific 
 Slice 4 ✅ step 1 (item tracker repo, guided 5pm Item Progress, Delivery Activity,
 two-day state-machine proof) · Slice 5 ✅ (weekly compile: Teleport compiler+formatter
 ported, Groq 7/7 keys, real .docx) · Slice 6 ✅ (integration: 42-test pytest suite + full
-6-day sim → real .docx) · Slice 7 pending (deploy). Pipeline + proofs: `dailybot/docs/build/` | Own folder `dailybot/` (independent deploy target), zero v3 web-app code; `topics.json` ported from 6a, `compiler.py`/`formatter.py` port from Teleport at Slice 5 |
+6-day sim → real .docx) · Slice 7 prep ✅ (Dockerfile/compose/.env.example/DEPLOY.md/tzdata);
+live VM deploy blocked on Naqib (OCI signup + BotFather token). Pipeline + proofs: `dailybot/docs/build/` | Own folder `dailybot/` (independent deploy target), zero v3 web-app code; `topics.json` ported from 6a, `compiler.py`/`formatter.py` port from Teleport at Slice 5 |
 | **Q** | QA (after every lane) | N/A — mandatory gate | Full suite green + build green + real-fixture check + short `BUILD_PROGRESS.md` entry |
 
 **Extension invariants (from Architecture v1 Part 2):**

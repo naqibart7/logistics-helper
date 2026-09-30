@@ -1,0 +1,14 @@
+# NAQIB Daily Bot v2 — Oracle Always Free (or any Docker host) one-command run.
+# The VM provides: Docker, this repo cloned, and a `.env` file (never committed).
+# data/ persists via the bind mount; topics.json comes from the git clone.
+# Only ONE instance may run anywhere (Telegram allows a single poller).
+services:
+  bot:
+    build: .
+    container_name: naqib-daily-bot
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+    # No ports: the bot polls Telegram outbound, nothing listens inbound.

@@ -1,0 +1,16 @@
+# Keep secrets and runtime state out of the image. `data/` is provided by the
+# bind mount in docker-compose (topics.json comes from the git clone on the host).
+.env
+.git
+data/
+logs_*.txt
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+tests/
+docs/
+dist/
+build/
+.DS_Store
