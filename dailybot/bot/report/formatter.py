@@ -22,8 +22,6 @@ from bot.report.utils import BM_DAYS, BM_MONTHS
 
 HARIAN_PROJECT = "Harian"
 
-OUTPUT_DIR = config.REPORTS_DIR
-
 
 def _set_cell_bg(cell, hex_color: str) -> None:
     tc = cell._tc
@@ -76,7 +74,8 @@ def build_docx(
     working_days: list[date],
 ) -> Path:
     """Build the full report .docx and return its path."""
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir = config.REPORTS_DIR  # read at call time so tests/sims can redirect it
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     doc = Document()
 
@@ -204,6 +203,6 @@ def build_docx(
 
     safe_range = date_range_line.replace(" ", "_").replace("-", "-")
     filename = f"Laporan_{safe_range}.docx"
-    out_path = OUTPUT_DIR / filename
+    out_path = output_dir / filename
     doc.save(str(out_path))
     return out_path

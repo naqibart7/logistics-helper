@@ -85,9 +85,8 @@ def days_with_data(activities_by_day: dict[str, list[dict]]) -> int:
     return sum(1 for rows in activities_by_day.values() if rows)
 
 
-async def generate_weekly_report() -> str:
-    """Full pipeline: read week → compile (LLM) → build .docx → return path."""
-    working_days = last_n_working_days(6)
+async def compile_week(working_days: list[date]) -> str:
+    """Compile an explicit list of working days -> .docx -> return path."""
     start_date, end_date = working_days[0], working_days[-1]
 
     activities_by_day = load_activities_by_day(working_days)
@@ -109,3 +108,8 @@ async def generate_weekly_report() -> str:
     )
     logger.info("Weekly report written to %s", docx_path)
     return str(docx_path)
+
+
+async def generate_weekly_report() -> str:
+    """Full pipeline for the last 6 working days: read → compile → .docx."""
+    return await compile_week(last_n_working_days(6))

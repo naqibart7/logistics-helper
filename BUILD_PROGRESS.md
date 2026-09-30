@@ -548,3 +548,17 @@ command wired. **Live proof:** 6 working days of fake Slice-3/4 data → Groq re
 **7/7 keys non-empty** → real `.docx` (all 6 numbered headings + 7 content labels +
 activity table, 6 day rows) → re-opened and verified. Deps: `openai`, `python-docx`,
 `python-dotenv`. Slices 6–7 pending (integration, deploy).
+
+**Slice 6 ✅** — integration. `dailybot/tests/` pytest suite (**42 tests, all pass**)
+covering scheduler (26-event week, Sunday silent, ordering), conversation (JS-weekday
+rule, Smart Skip pending/leftovers, free-text matching), items (state-machine parser:
+move/add/remove/no-change, case preserved), topics (Mon/Tue/Sun first-topic), weekly
+adapter (daily→activities_by_day, no-signal drops, delivery), report utils (week-of-month,
+BM labels, working-day list). `bot/sim_week.py` drives a full 6-day week through
+conversation + item + store layers (no Telegram) and compiles the weekly `.docx`; run
+isolated on a temp tree (real data untouched). **Proof:** the sim recorded **55 chunk
+answers** (10 Mon + 9×5) and produced a real `.docx` — re-opened: all 6 numbered headings
++ activity table (1 header + 6 day rows). Side-fixes: `formatter.py` now reads
+`config.REPORTS_DIR` at call time (was import-time — blocked test redirection);
+`weekly.compile_week()` extracted so a non-`today` week can be compiled. Slice 7 pending
+(Oracle VM deploy).
