@@ -531,9 +531,12 @@ Tue/Sun→project_briefing, asserted). **Slice 3 step 1 ✅** conversation engin
 topic-by-topic with Smart Skip, catch-up ping lists only real leftovers (silent when none).
 Sim-day proof: Tue fresh→4 midday topics; 2 early answers→2 left; catch-up shows exactly the
 leftovers; all-answered→silent. Deps reused from Teleport's install
-(python-telegram-bot 21.9, APScheduler 3.10.4). **Slice 3 ✅ step 2** free-text matching —
-`match_free_text()` in `conversation.py` (rule-based keyword overlap on title+prompt,
-stopwords removed; best-score wins, ties/zero stay silent — never guesses; 6/6 sim assertions:
-lalamove/supplier/isu/briefing matched, bare "Tiada" + off-topic ignored). No-PENDING branch of
-`on_text` now stores stray messages against the matched open topic. Lane 6a's JS logic wasn't
-available locally, so the design is ours (flagged in code). Slices 4–7 pending.
+(python-telegram-bot 21.9, APScheduler 3.10.4). **Slice 3 ✅** — checklist core
+(both chunks walk + catch-up + sim-day proof) and rule-based free-text matching
+(6/6 assertions pass; Lane 6a JS logic not available locally, design flagged in code).
+**Slice 4 ✅ step 1** — item tracker repo (`bot/items.py`) + guided 5pm Item Progress
+flow + Delivery Activity in `daily/{date}.json`. Two-fake-day proof: Day 1 seed
+PVC/H.Steel `in_progress` at 50%, Day 2 carries over from disk, moves to
+`done_payment`/`ready_on_site` at 75%; state machine `🔁→💰` and `🔁→✅` verified.
+Delivery Activity `doneToday` + `readyToDeliver` saved to daily JSON. Slices 5–7
+pending (Groq/docx weekly compile, integration, deploy).
