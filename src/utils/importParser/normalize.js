@@ -27,6 +27,10 @@ const toNullNumber = (v) => {
   if (s === '' || s.toUpperCase() === 'NAN') return null;
   // Handle "20.0%" or "20%" or "0.2" (fraction) for wastage
   const isPct = s.includes('%');
+  // A cell with no digit at all ("—", "-", "TBD", "(empty after strip)") is
+  // "no value / not costed" -> null, not 0. Number('') is 0, which would
+  // silently turn an explicitly un-costed price into RM 0.00 instead of TBD.
+  if (!/\d/.test(s)) return null;
   const n = Number(s.replace(/[^0-9.\-]/g, ''));
   if (!Number.isFinite(n)) return null;
   return { value: n, isPct };

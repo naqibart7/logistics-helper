@@ -147,4 +147,45 @@ describe('Task N regression: real inverted-order file with comma-less Master tit
     const panel = parsed.bomItems.find((r) => r.item === 'PVC Decorative Panel (finished lattice)');
     expect(panel).toMatchObject({ purchaseQty: 3, confidence: 'High' });
   });
+
+  it('keeps every real price and turns “—” (TBC / not-costed) into null, never 0', async () => {
+    const buf = fs.readFileSync(hashimaPath);
+    const parsed = await parseXlsx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+
+    const byName = (name) => parsed.bomItems.filter((r) => r.item === name);
+    // Real price table from the source (Unit Price (RM) / Est. Total (RM)).
+    const priced = {
+      'PVC Sheet 10 mm (raw for CNC)': { unitCost: 375, estTotal: 750 },
+      'Jotun Majestic Paint (Panel + Site / Base)': { unitCost: 45, estTotal: 90 },
+      'X-Bond Construction Adhesive 500 ml': { unitCost: 15, estTotal: 15 },
+      'Silicon Sealant (Paintable)': { unitCost: 10, estTotal: 10 },
+      'Masking Tape 2" (Bundle)': { unitCost: 10, estTotal: 10 },
+      'Canvas Blue White': { unitCost: 60, estTotal: 60 },
+    };
+    for (const [name, want] of Object.entries(priced)) {
+      const rows = byName(name);
+      expect(rows.length, name).toBeGreaterThanOrEqual(1);
+      for (const r of rows) expect(r).toMatchObject(want);
+    }
+    // Jotun appears twice (two colour codes), both priced identically.
+    expect(byName('Jotun Majestic Paint (Panel + Site / Base)')).toHaveLength(2);
+    // Real numeric zero stays zero (Super Glue: costed 90, ordered 0).
+    expect(byName('Super Glue 10g (Box)')[0]).toMatchObject({ unitCost: 90, purchaseQty: 0, estTotal: 0 });
+    expect(byName('Transportation')[0]).toMatchObject({ unitCost: 300, estTotal: 300 });
+
+    // “—” (em-dash) in the price column means "not costed / TBC" -> null, not 0.
+    const uncosted = [
+      'PVC Decorative Panel (finished lattice)',
+      'Access Equipment (ladder / light)',
+    ];
+    for (const name of uncosted) {
+      const r = byName(name)[0];
+      expect(r, name).toBeTruthy();
+      expect(r.unitCost, name).toBeNull();
+      expect(r.estTotal, name).toBeNull();
+    }
+
+    // Item-count guard: 11 source rows, 11 parsed — no phantom/dropped items.
+    expect(parsed.bomItems).toHaveLength(11);
+  });
 });
