@@ -232,7 +232,8 @@ Mobile-first: bottom-30% primary actions, deterministic progress text, specific 
 | **6a** | Minimal Telegram bot (Daily Report draft only) | ✅ **SHIPPED 2026-09-21** in `d:\Desktop\lh_bot_6a` (11/11 tests; gaps recorded in `telegram_bot_gaps.md`) → **SUPERSEDED by Daily Bot v2** (below); archived when v2 ships | Separate repo outside v3; zero v3 code |
 | **DB2** | **NAQIB Daily Bot v2** (Architecture Phase 2, 2026-09-28) | **IN BUILD** — Slice 0 ✅ · Slice 1 ✅ (26/26 fast-forwarded proof) · Slice 2 ✅ (live round-trip: question → "Tiada" → daily JSON) · weekday-convention bug caught live + fixed · Slice 3 ✅ (checklist core + both chunks + catch-up + rule-based free-text matching) ·
 Slice 4 ✅ step 1 (item tracker repo, guided 5pm Item Progress, Delivery Activity,
-two-day state-machine proof) · Slices 5–7 pending. Pipeline + proofs: `dailybot/docs/build/` | Own folder `dailybot/` (independent deploy target), zero v3 web-app code; `topics.json` ported from 6a, `compiler.py`/`formatter.py` port from Teleport at Slice 5 |
+two-day state-machine proof) · Slice 5 ✅ (weekly compile: Teleport compiler+formatter
+ported, Groq 7/7 keys, real .docx) · Slices 6–7 pending. Pipeline + proofs: `dailybot/docs/build/` | Own folder `dailybot/` (independent deploy target), zero v3 web-app code; `topics.json` ported from 6a, `compiler.py`/`formatter.py` port from Teleport at Slice 5 |
 | **Q** | QA (after every lane) | N/A — mandatory gate | Full suite green + build green + real-fixture check + short `BUILD_PROGRESS.md` entry |
 
 **Extension invariants (from Architecture v1 Part 2):**

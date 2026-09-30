@@ -1,3 +1,8 @@
-# Slice 2 needs only these two. Weekly compile deps (openai, python-docx) join at Slice 5.
+# Slice 2 needs only these two. Weekly compile deps join at Slice 5.
 python-telegram-bot==21.9
 APScheduler==3.10.4
+
+# Slice 5 — weekly compile (Groq LLM + .docx formatter; near-verbatim from Teleport)
+openai>=1.0
+python-docx>=1.1
+python-dotenv>=1.0

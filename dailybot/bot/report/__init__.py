@@ -1,0 +1,1 @@
+"""Report package — weekly compile (Slice 5), ported near-verbatim from Teleport."""

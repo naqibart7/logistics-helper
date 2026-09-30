@@ -1,8 +1,9 @@
 """
-main.py — Slice 4: item tracker (guided 5pm flow per project) + Delivery Activity.
-Both chunks + catch-up + free-text from Slice 3 remain. No Groq/docx (Slice 5).
+main.py — Slice 5: weekly compile (Groq + .docx) added alongside the item
+tracker, both chunk flows, catch-up ping, and free-text matching.
 
-Env (from dailybot/.env, never committed): TELEGRAM_BOT_TOKEN, NAQIB_CHAT_ID.
+Env (from dailybot/.env, never committed): TELEGRAM_BOT_TOKEN, NAQIB_CHAT_ID,
+GROQ_API_KEY (+ LLM_PROVIDER / LLM_MODEL).
 V2_TEST_SEND=1 -> also fire the midday question once at startup (proof mode).
 
 Run from dailybot/:  python -m bot.main
@@ -26,6 +27,7 @@ from bot.scheduler import TOUCHPOINTS, label_for
 from bot.store import load_daily, save_daily, record_answer, now_kl_time
 from bot.topics import load_topics
 from bot.items import load_items, save_items, format_item_list, apply_item_changes, icon_for
+from bot.weekly import generate_weekly_report, days_with_data, load_activities_by_day
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("dailybot")
@@ -240,6 +242,32 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"Rekod harini ({today_iso()}):\n{record}")
 
 
+async def cmd_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Generate the weekly report (.docx) from the last 6 working days (Slice 5)."""
+    if str(update.effective_chat.id) != os.environ.get("NAQIB_CHAT_ID"):
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    await update.message.reply_text("⏳ Sedang menyediakan laporan mingguan...")
+    try:
+        docx_path = await generate_weekly_report()
+    except Exception as e:
+        log.exception("Weekly report failed")
+        await update.message.reply_text(
+            f"❌ Gagal menjana laporan: {e}\n\nSemak GROQ_API_KEY dalam .env."
+        )
+        return
+    filename = docx_path.rsplit("\\", 1)[-1].rsplit("/", 1)[-1]
+    with open(docx_path, "rb") as f:
+        await context.bot.send_document(
+            chat_id=update.effective_chat.id,
+            document=f,
+            filename=filename,
+            caption="📄 *Laporan Mingguan*\nSila semak dan isi kolum *Waktu Balik* sebelum hantar.",
+            parse_mode="Markdown",
+        )
+    log.info("Weekly report sent: %s", filename)
+
+
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle chunk replies, free-text matching, AND Item Progress / Delivery Activity flow."""
     if str(update.effective_chat.id) != os.environ.get("NAQIB_CHAT_ID"):
@@ -372,8 +400,9 @@ def main():
     app = Application.builder().token(token).post_init(post_init).build()
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("weekly", cmd_weekly))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
-    log.info("Starting NAQIB Daily Bot v2 (Slice 4: item tracker + delivery) — polling, no inbound port")
+    log.info("Starting NAQIB Daily Bot v2 (Slice 5: + weekly compile) — polling, no inbound port")
     app.run_polling()
 
 

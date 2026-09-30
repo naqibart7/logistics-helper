@@ -510,7 +510,7 @@ ports verbatim; Groq model-drift hazard; single-poller cutover). `telegram_bot_g
 three gaps superseded by v2. SYSTEM_SPEC Annex C: 1B + 6a rows corrected (both had shipped),
 Lane 2 updated, new **DB2** lane approved — **build next**. Zero v3 web-app code touched.
 
-## Daily Bot v2 — Slices 0–3 in build (2026-09-29, per-slice handoffs in dailybot/docs/build/)
+## Daily Bot v2 — Slices 0–5 in build (per-slice handoffs in dailybot/docs/build/)
 **Slice 0 ✅** scaffold per Architecture §6 — `dailybot/data/` tree, topics.json copied verbatim
 (SHA-256 identical to the 6a source), `projects.json` seed `{"projects": []}`, runtime dirs
 gitignored (personal answers live on the Oracle VM, never in git). **Slice 1 ✅** touchpoint
@@ -538,5 +538,13 @@ leftovers; all-answered→silent. Deps reused from Teleport's install
 flow + Delivery Activity in `daily/{date}.json`. Two-fake-day proof: Day 1 seed
 PVC/H.Steel `in_progress` at 50%, Day 2 carries over from disk, moves to
 `done_payment`/`ready_on_site` at 75%; state machine `🔁→💰` and `🔁→✅` verified.
-Delivery Activity `doneToday` + `readyToDeliver` saved to daily JSON. Slices 5–7
-pending (Groq/docx weekly compile, integration, deploy).
+Delivery Activity `doneToday` + `readyToDeliver` saved to daily JSON.
+**Slice 5 ✅** — weekly compile. Ported Teleport's `compiler.py` + `formatter.py`
+near-verbatim into `bot/report/` (same BM `SYSTEM_PROMPT` + 7-key JSON contract +
+`.docx` layout; only the input source changed: `bot/weekly.py` reshapes
+`daily/*.json` into Teleport's `activities_by_day` shape instead of SQLite). LLM
+config added to `bot/config.py` (Groq preset, `openai/gpt-oss-120b`). `/weekly`
+command wired. **Live proof:** 6 working days of fake Slice-3/4 data → Groq returned
+**7/7 keys non-empty** → real `.docx` (all 6 numbered headings + 7 content labels +
+activity table, 6 day rows) → re-opened and verified. Deps: `openai`, `python-docx`,
+`python-dotenv`. Slices 6–7 pending (integration, deploy).
