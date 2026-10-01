@@ -112,7 +112,7 @@ export default function ProjectsScreen({ onOpenProject }) {
         await reload();
         onOpenProject(match.project.id);
       } else {
-        const project = await createProject({ name: parsed.projectTitle });
+        const project = await createProject({ name: parsed.projectTitle, location: parsed.location ?? null });
         const seed = await seedProjectFromImport(project.id, parsed, seedDeps);
         await createImportRun({ ...score, fileName: file.name, projectId: project.id });
         setStatus(

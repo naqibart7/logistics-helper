@@ -140,12 +140,39 @@ export const extractProjectTitle = (headerText, fallback = '') => {
   return candidate.replace(/\s+/g, ' ').toUpperCase().replace(/,+$/, '').trim() || 'UNKNOWN PROJECT';
 };
 
+/** Location tail from the same text extractProjectTitle consumes — everything
+ *  after the first comma ("KEDIAMAN PUAN HASHIMA, LORONG CAKERA PURNAMA, PUNCAK
+ *  ALAM" -> "LORONG CAKERA PURNAMA, PUNCAK ALAM"). Null when no comma.
+ *  Mirrors extractProjectTitle's preamble so the two never drift apart. */
+export const extractProjectLocation = (headerText) => {
+  if (!headerText) return null;
+  const s = String(headerText);
+  const parts = s.split(/[—–|]/).map((p) => p.trim()).filter(Boolean);
+  let candidate;
+  const markerIdx = parts.findIndex(
+    (p) => /master|reconciliation/i.test(p) && /bom/i.test(p)
+  );
+  if (markerIdx >= 0 && markerIdx + 1 < parts.length) {
+    candidate = parts[markerIdx + 1];
+  } else {
+    candidate = parts.length > 1 ? parts[parts.length - 1] : s.trim();
+  }
+  candidate = candidate.replace(/^(master|reconciliation|bom|project|supplier|purchasing|list|dashboard)\W*/i, '').trim();
+  candidate = candidate.split(/client:|pipeline:|drawing:/i)[0].trim();
+  const commaIdx = candidate.indexOf(',');
+  if (commaIdx < 0) return null;
+  const location = candidate.slice(commaIdx + 1).trim();
+  const cleaned = location.replace(/\s*\([^)]*\)\s*$/, '').replace(/,+$/, '').trim();
+  return cleaned ? cleaned.replace(/\s+/g, ' ') : null;
+};
+
 /** Build final ParsedImport with required keys, empty arrays for absent sections. */
-export const buildParsedImport = ({ projectTitle, bomItems = [], shortageConfirmItems = [], supplierEntries = [], changeLogFromAgent = [] }) => {
+export const buildParsedImport = ({ projectTitle, location = null, bomItems = [], shortageConfirmItems = [], supplierEntries = [], changeLogFromAgent = [] }) => {
   // Array.isArray (not just defaults): an explicit null must also resolve to [], never crash .map.
   const arr = (v) => (Array.isArray(v) ? v : []);
   return {
     projectTitle: projectTitle && String(projectTitle).trim() ? String(projectTitle).trim() : 'UNKNOWN PROJECT',
+    location: location && String(location).trim() ? String(location).trim() : null,
     bomItems: arr(bomItems).map(normalizeBomItem).filter((b) => b.item !== null),
     shortageConfirmItems: arr(shortageConfirmItems).map(normalizeShortageItem).filter((s) => s.issue !== null || s.confirmationRequired !== null),
     supplierEntries: arr(supplierEntries).map(normalizeSupplierEntry).filter((s) => s.businessName !== null),

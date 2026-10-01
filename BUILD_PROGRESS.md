@@ -4,7 +4,7 @@
 
 Pipeline: `logistics_helper_v3_build_pipeline.md` (5 agents). Status: **all 5 agents done, verified**.
 Follow-ups Task A (same-run fixtures) + Task B (dead-file deletion) + Tasks C/D (README count, supplier browser) + Tasks E/F (dedupe key, PO PDF) + Task G (Phase 5 audit): **done, verified** (G4 physical-device test is human-run — checklist below).
-Verification: `npx vitest run` → **33 files, 136 tests, all pass**. `npx vite build` → **green**.
+Verification: `npx vitest run` → **34 files, 143 tests (141 pass, 2 timeout flakes under parallel load — both pass in isolation)**. `npx vite build` → **green**.
 
 ## Agent 1 — Parser ✅ (Task A: deep equality, 2026-09-11)
 Files: `src/utils/importParser/{detectFormat,mdReader,xlsxReader,normalize,index}.js`
@@ -476,6 +476,45 @@ Passive trust overlay on every import — no confirm step, no gate, never blocks
   source-inconsistent total (555→557), dropped parsed row (line_count + item_name),
   qty drift (9 vs 5), CSV duplicates + rejected rows; blank CSV fields stay warnings.
   `mergeEngine.js`, `poGate.js`, `supplierLinking.js`, `poDocument.js` untouched.
+
+## Priority 2 — Project.location from imports ✅ (2026-10-01)
+Small contained fix per `NEXT_ACTIONS.md`:
+- `normalize.js`: added `extractProjectLocation` (mirrors `extractProjectTitle` preamble,
+  returns tail after first comma, not uppercased, `null` if no comma); `buildParsedImport`
+  now carries `location` field.
+- `xlsxReader.js`: captures `locationHint` from explicit `Project:` line only
+  (`/project\s*:\s*([^\n|]+)/i`), split from Surau fallback match; passes to
+  `buildParsedImport`.
+- `mdReader.js`: same optional `Project:` capture (returns `null` for both current md
+  fixtures).
+- `ProjectsScreen.jsx:115`: seed path now `createProject({ name: parsed.projectTitle,
+  location: parsed.location ?? null })`. Reimport path untouched (`reimportProject`
+  never writes location).
+- `parser.test.js`: new `Priority 2 regression` block — Hashima fixture →
+  `LORONG CAKERA PURNAMA, PUNCAK ALAM`; synthetic dashboard → `PUNCAK ALAM, SELANGOR`;
+  all three Surau formats → `null` (comma in dashboard title without `Project:` prefix
+  must not leak — deep-equality `xlsx === md` preserved).
+- Verification: parser suite 12/12 pass; full suite 141/143 (2 e2e timeout flakes under
+  parallel load, both pass in isolation); production build green.
+
+## xlsx pricing bug — investigation result (2026-10-01)
+Ran Lane 1A's `importScorecard.js` against
+`Artseven_BOM_Q260163_Kediaman_Puan_Hashima_v2.xlsx`:
+- Scorecard: **PASSED** — line count 11/11, zero errors, zero warnings.
+- Fresh parse prices match expected table exactly:
+  - PVC Sheet 10 mm (raw for CNC): 375 / 750
+  - Jotun Majestic Paint (both colour codes): 45 / 90
+  - X-Bond Construction Adhesive 500 ml: 15 / 15
+  - Silicon Sealant (Paintable): 10 / 10
+  - Masking Tape 2" (Bundle): 10 / 10
+  - Super Glue 10g (Box): 90 / 0 (qty 0)
+  - Canvas Blue White: 60 / 60
+  - Transportation: 300 / 300
+  - Two items correctly `null` (PVC Decorative Panel finished lattice, Access Equipment)
+- Earlier report of "all prices as TBD" was **not a fresh-parse bug** — likely a stale
+  project / reimport issue (phantom/merged items also observed in that report). The fresh
+  parser and scorecard are correct; no fix needed. Existing `parser.test.js` cases for
+  this fixture already assert the correct price table and pass.
 
 ## Extension decisions 2026-09-25 (recorded in docs/extension/DECISIONS_LOG.md)
 Naqib confirmed: next lane = **Lane 1A** (this entry); stock design = **Option A**

@@ -7,7 +7,7 @@
  *   - Qwen variant: ## H_Order_Ready_Dashboard / ## A_Master_BOM / ...
  *   - Pandas-export variant: ## 1_Project_Summary / ## 2_Master_BOM / ... (Unnamed: columns)
  */
-import { buildParsedImport, extractProjectTitle } from './normalize.js';
+import { buildParsedImport, extractProjectTitle, extractProjectLocation } from './normalize.js';
 
 /** Split markdown into sections keyed by normalized header. */
 export const splitSections = (text) => {
@@ -309,7 +309,11 @@ export const parseMarkdown = (text) => {
     else if (titleHint) projectTitle = extractProjectTitle(titleHint);
   }
 
-  return buildParsedImport({ projectTitle, bomItems, shortageConfirmItems, supplierEntries, changeLogFromAgent });
+  // Location: an explicit "Project: NAME, LOCATION" line, if present.
+  const pl = String(text).match(/project\s*:\s*([^\n\r|]+)/i);
+  const location = pl ? extractProjectLocation(pl[1] || pl[0]) : null;
+
+  return buildParsedImport({ projectTitle, location, bomItems, shortageConfirmItems, supplierEntries, changeLogFromAgent });
 };
 
 export default parseMarkdown;

@@ -189,3 +189,40 @@ describe('Task N regression: real inverted-order file with comma-less Master tit
     expect(parsed.bomItems).toHaveLength(11);
   });
 });
+
+describe('Priority 2 regression: Project.location from explicit Project: line only', () => {
+  it('extracts the comma-tail from the dashboard Project: line (Hashima fixture)', async () => {
+    const buf = fs.readFileSync(path.join(dir, 'fixtures/Artseven_BOM_Q260163_Kediaman_Puan_Hashima_v2.xlsx'));
+    const parsed = await parseXlsx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    expect(parsed.location).toBe('LORONG CAKERA PURNAMA, PUNCAK ALAM');
+  });
+
+  it('extracts the comma-tail from a synthetic dashboard Project: line', () => {
+    const book = XLSX.utils.book_new();
+    const dashboard = XLSX.utils.aoa_to_sheet([
+      ['ORDER-READY DASHBOARD'],
+      ['Project: KEDIAMAN PUAN HASHIMA, PUNCAK ALAM, SELANGOR | Q260163'],
+    ]);
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['MASTER / RECONCILIATION BOM — KEDIAMAN PUAN HASHIMA (Q260163)'],
+      ['Geometry Source of Truth: Detail Drawing'],
+      [],
+      ['ID', 'Item / Canonical Name', 'Unit', 'Net Qty'],
+      ['A1-01', 'PVC Decorative Panel', 'pcs', 3],
+    ]);
+    XLSX.utils.book_append_sheet(book, dashboard, 'H. Order-Ready Dashboard');
+    XLSX.utils.book_append_sheet(book, sheet, 'A. Master Reconciliation BOM');
+    expect(parseWorkbook(book).location).toBe('PUNCAK ALAM, SELANGOR');
+  });
+
+  it('leaves location null when no explicit Project: line exists (all Surau formats)', async () => {
+    const md = parseMarkdown(mdText);
+    const xlsx = await parseXlsx(xlsxAb);
+    const pandas = parseMarkdown(pandasText);
+    // Surau dashboard r0 carries a comma ("..., BETONG, SARAWAK") but no
+    // "Project:" prefix, so it must NOT become a location — xlsx === md.
+    expect(md.location).toBeNull();
+    expect(xlsx.location).toBeNull();
+    expect(pandas.location).toBeNull();
+  });
+});

@@ -14,7 +14,7 @@
  * the single source of truth for bomItems (avoids double-count).
  */
 import * as XLSX from 'xlsx';
-import { buildParsedImport, extractProjectTitle } from './normalize.js';
+import { buildParsedImport, extractProjectTitle, extractProjectLocation } from './normalize.js';
 
 const H = (s) => String(s ?? '').toLowerCase();
 
@@ -223,6 +223,7 @@ export const parseWorkbook = (workbook) => {
   let supplierEntries = [];
   let changeLogFromAgent = [];
   let titleHint = '';
+  let locationHint = '';
 
   // A corrupt/foreign file can read without SheetNames — resolve to empty, never crash.
   const names = workbook && Array.isArray(workbook.SheetNames) ? workbook.SheetNames : [];
@@ -236,7 +237,12 @@ export const parseWorkbook = (workbook) => {
     // title directly in "MASTER / RECONCILIATION BOM — <project>" instead.
     if (role === 'bom' || role === 'dashboard') {
       const top = rows.slice(0, 5).map((r) => r.join(' ')).join(' ');
-      const m = top.match(/project\s*:\s*([^\n|]+)/i) || top.match(/surau\s+darul\s+dakwah[^\n|]*/i);
+      const projMatch = top.match(/project\s*:\s*([^\n|]+)/i);
+      const m = projMatch || top.match(/surau\s+darul\s+dakwah[^\n|]*/i);
+      // Location comes only from an explicit "Project: NAME, LOCATION" line.
+      if (projMatch && !locationHint) {
+        locationHint = projMatch[1] || projMatch[0];
+      }
       // The Master BOM is more canonical than a dashboard summary, which can
       // omit quotation/reference text needed to distinguish projects. Read
       // its title row directly before considering a generic text match.
@@ -256,7 +262,8 @@ export const parseWorkbook = (workbook) => {
   }
 
   const projectTitle = titleHint ? extractProjectTitle(titleHint) : 'UNKNOWN PROJECT';
-  return buildParsedImport({ projectTitle, bomItems, shortageConfirmItems, supplierEntries, changeLogFromAgent });
+  const location = locationHint ? extractProjectLocation(locationHint) : null;
+  return buildParsedImport({ projectTitle, location, bomItems, shortageConfirmItems, supplierEntries, changeLogFromAgent });
 };
 
 export const parseXlsx = async (fileOrBuffer) => {
