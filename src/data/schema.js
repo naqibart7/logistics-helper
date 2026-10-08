@@ -41,9 +41,11 @@ export const MANUAL_REASON_TAGS = ['site', 'missing', 'correction'];
 export const DB_NAME = 'logistics-helper-v3';
 
 export const STORES = {
-  projects: 'id, name, createdAt',
+  projects: 'id, name, location, createdAt',
   bomItems: 'id, projectId, category',
   shortageItems: 'id, projectId, resolved, kind',
+  stockItems: 'id, itemKey, description, unit, startingCount, minThreshold, lastVerifiedAt',
+  stockMovements: 'id, itemKey, type, quantity, linkedProjectId, linkedSupplierId, actor, note, timestamp',
   globalSuppliers: 'id, businessName',
   supplierLinks: '[projectId+globalSupplierId], projectId, globalSupplierId',
   changeLog: 'id, projectId, timestamp',
