@@ -53,12 +53,24 @@ export const buildWhatsAppLink = (summaryText) =>
 
 /**
  * Render the PO PDF. ASCII-only content, compression off (deterministic bytes).
+ * @param {object} options
+ * @param {string} options.projectName
+ * @param {string} options.generatedAt
+ * @param {Array} options.lines
+ * @param {number} options.total
+ * @param {number} [options.openConfirmCount] — if >0, prepends a caveat line to the PDF header
  * @returns {ArrayBuffer} the PDF file bytes
  */
-export const renderPoPdf = ({ projectName, generatedAt, lines, total }) => {
+export const renderPoPdf = ({ projectName, generatedAt, lines, total, openConfirmCount }) => {
   const doc = new jsPDF({ compress: false });
   const tbd = countTbd(lines);
   let y = 20;
+
+  if (openConfirmCount > 0) {
+    doc.setFontSize(10);
+    doc.text(`${openConfirmCount} item(s) pending confirmation — this BOM may be incomplete.`, 14, y);
+    y += 7;
+  }
 
   doc.setFontSize(16);
   doc.text('PURCHASE ORDER', 14, y);

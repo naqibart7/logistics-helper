@@ -24,6 +24,9 @@ export const StockItem = {
   startingCount: 0, // one-time baseline, set when item first added to tracking
   minThreshold: 0,  // "key-item min" — below this, low-stock badge shows
   lastVerifiedAt: null, // ISO date string of last physical recount
+  location: null,   // rack or zone where item is stored
+  isKeyItem: false, // flag: this is a "key item" tracked for low-stock pings
+  workersOftenTake: false, // flag: item is commonly consumed by workshop staff
 };
 
 /** StockMovement fields (persisted in Dexie). */
@@ -131,6 +134,30 @@ export const updateMinThreshold = async (itemKey, minThreshold) => {
   );
 };
 
+/** Set the storage location (rack/zone) for a StockItem. */
+export const setItemLocation = async (itemKey, location) => {
+  await db.stockItems.update(
+    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
+    { location }
+  );
+};
+
+/** Set the key-item flag for a StockItem. */
+export const setItemKeyItem = async (itemKey, isKeyItem) => {
+  await db.stockItems.update(
+    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
+    { isKeyItem }
+  );
+};
+
+/** Set the workers-often-take flag for a StockItem. */
+export const setWorkersOftenTake = async (itemKey, workersOftenTake) => {
+  await db.stockItems.update(
+    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
+    { workersOftenTake }
+  );
+};
+
 /** Record a physical recount — writes an adjustment movement and updates lastVerifiedAt. */
 export const recordRecount = async (itemKey, realCount, notedBy = 'supervisor') => {
   const item = db.stockItems.get(itemKey);
@@ -156,6 +183,28 @@ export const recordRecount = async (itemKey, realCount, notedBy = 'supervisor') 
     note: `Recount adjustment: ${adjustment > 0 ? 'added' : 'removed'} ${Math.abs(
       adjustment
     )} ${item.unit || ''}. Real: ${realCount}, Predicted: ${predicted}. Noted by: ${notedBy}`,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+/** Write a `received` movement for a StockItem (auto-called when supplier order is marked received). */
+export const writeReceivedMovement = async (itemKey, quantity, supplierId) => {
+  await addMovement({
+    itemKey,
+    type: 'received',
+    quantity,
+    linkedSupplierId: supplierId,
+    timestamp: new Date().toISOString(),
+  });
+};
+
+/** Write a `used` movement for a StockItem linked to a project (auto-called when prepared-from-stock toggle is used). */
+export const writeUsedMovement = async (itemKey, quantity, projectId) => {
+  await addMovement({
+    itemKey,
+    type: 'used',
+    quantity,
+    linkedProjectId: projectId,
     timestamp: new Date().toISOString(),
   });
 };

@@ -15,7 +15,12 @@ import {
   listStockItems,
   listLowStockItems,
   getPredictedBalance,
+  setItemLocation,
+  setItemKeyItem,
+  setWorkersOftenTake,
   recordRecount,
+  writeReceivedMovement,
+  writeUsedMovement,
 } from '../data/stockRepo.js';
 import { addMovement, getMovementsByItemKey } from '../data/stockMovementRepo.js';
 import { itemKey } from '../logic/itemMatcher.js';
@@ -127,16 +132,20 @@ const StockScreen = () => {
                     className="small secondary"
                     title="Mark items from supplier order as received"
                     onClick={() => {
-                      // TODO: integrate with Quick Order arrivals-tap
-                      // When a supplier order is marked received, any StockItem on that
-                      // order gets a `received` movement written automatically.
-                      // TODO: show which items were tracked and got movements
-                      window.alert(
-                        'Arrivals-tap: Click would integrate with order received flow to write automatic `received` movements. ' +
-                          'The movement writes itemKey, type="received", quantity from the order, ' +
-                          'linkedSupplierId from the order supplier, and actor="supervisor".'
-                      );
-                    }}
+                      const itemKey = si.item.itemKey;
+                      const realQty = window.prompt('Enter the received quantity:' );
+                      if (realQty !== null && realQty !== '') {
+                        const qty = parseInt(realQty, 10);
+                        const supplierId = window.prompt('Enter the supplier ID (or leave blank):') || null;
+                        writeReceivedMovement(itemKey, qty, supplierId)
+                          .then(() => {
+                            window.alert(`${qty} unit(s) received recorded for this item.`);
+                            refreshStock();
+                          })
+                          .catch((e) => {
+                            window.alert('Error recording received movement: ' + e.message);
+                          });
+                      }}
                   >
                     Arrivals-tap
                   </button>
@@ -144,15 +153,20 @@ const StockScreen = () => {
                     className="small secondary"
                     title="Mark item used from workshop stock for a project"
                     onClick={() => {
-                      // TODO: integrate with BOM checklist Prepared toggle
-                      // When marking an item "prepared, from workshop stock?", write a
-                      // `used` movement against that project automatically.
-                      // TODO: show which items have this toggle and which project
-                      window.alert(
-                        'Prepared-from-stock: Click would integrate with BOM checklist to write automatic `used` movements. ' +
-                          'The movement writes itemKey, type="used", quantity, and linkedProjectId from the project selection.'
-                      );
-                    }}
+                      const itemKey = si.item.itemKey;
+                      const realQty = window.prompt('Enter the used quantity:' );
+                      if (realQty !== null && realQty !== '') {
+                        const qty = parseInt(realQty, 10);
+                        const projectId = window.prompt('Enter the project ID (or leave blank):') || null;
+                        writeUsedMovement(itemKey, qty, projectId)
+                          .then(() => {
+                            window.alert(`${qty} unit(s) used recorded for this item.`);
+                            refreshStock();
+                          })
+                          .catch((e) => {
+                            window.alert('Error recording used movement: ' + e.message);
+                          });
+                      }}
                   >
                     Prepared-from-stock
                   </button>

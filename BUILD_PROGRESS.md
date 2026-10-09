@@ -510,11 +510,46 @@ Ran Lane 1A's `importScorecard.js` against
   - Super Glue 10g (Box): 90 / 0 (qty 0)
   - Canvas Blue White: 60 / 60
   - Transportation: 300 / 300
-  - Two items correctly `null` (PVC Decorative Panel finished lattice, Access Equipment)
+- Two items correctly `null` (PVC Decorative Panel finished lattice, Access Equipment)
 - Earlier report of "all prices as TBD" was **not a fresh-parse bug** — likely a stale
   project / reimport issue (phantom/merged items also observed in that report). The fresh
   parser and scorecard are correct; no fix needed. Existing `parser.test.js` cases for
   this fixture already assert the correct price table and pass.
+
+## Lane 3 — Stock Materials Module ✅ (2026-10-01)
+**Scope** (Architecture v1 §Q6 + Lane order: Lane 0 → 1A → 1B → 2 → 3): browser-only
+stock ledger for workshop inventory. Dexie/IndexedDB stores (`stockItems`, `stockMovements`);
+predicted balance = startingCount + received − used; low-stock badge when predicted balance
+< minThreshold; physical recount via `recordRecount` + `lastVerifiedAt`; two automatic
+touchpoints: (A) arrivals-tap from supplier order → automatic `received` movement, (B)
+prepared-from-stock toggle in BOM checklist → automatic `used` movement. In-app low-stock
+badge (B) works immediately; Telegram low-stock ping (A) is gated inert until Lane 2 sync
+(`VITE_DEXIE_CLOUD_URL`) exists, following the same gated pattern as Lane 2's own sync code
+elsewhere in this repo.
+
+**Files touched:**
+- `src/data/stockRepo.js` — StockItem/StockMovement models, `computePredictedBalance`,
+  `getPredictedBalance`, `addMovement`, `setStartingCount`, `updateMinThreshold`,
+  `recordRecount`, `listLowStockItems`, `getLowStockBadgeCount`
+- `src/data/stockMovementRepo.js` — `addMovement`, `addMovements`, `getMovementsByItemKey`,
+  `listAllMovements`, `filterMovementsByType`, `getLastMovementTimestamp`, `deleteMovement`
+- `src/data/schema.js` — added `stockItems` and `stockMovements` to `STORES`
+- `src/screens/StockScreen.jsx` — StockScreen with low-stock badge, predicted balance display,
+  arrivals-tap/prepared-from-stock toggles, Telegram ping gated pattern (`canSync` from
+  `useSyncStatus`, inert when `VITE_DEXIE_CLOUD_URL` absent)
+- `src/data/syncStatus.js` — `isSyncEnabled()`, `getSyncInfo()`, `syncStatusLabel()`,
+  `subscribeSyncStatus()` used to gate Telegram ping
+
+**Verification:**
+- `npx vitest run` → **141/143 tests pass** (2 pre-existing timeout flakes under parallel load —
+  both pass in isolation; no regressions from stock module changes)
+- `npx vite build` → **green** (4.75s)
+- Parser deep-equality `xlsx === md` preserved
+- `tests/parser.test.js` 12/12 pass (incl. Priority 2 regression tests and Hashima price assertions)
+
+**Remaining blocker:** Naqib's key-items list edits (Keep/Drop/Change per item + real paint &
+electrical additions, per Architecture v1 specification). Once landed, populate `StockItem`
+entries with `startingCount` and `minThreshold`; then activate the Telegram low-stock ping.
 
 ## Extension decisions 2026-09-25 (recorded in docs/extension/DECISIONS_LOG.md)
 Naqib confirmed: next lane = **Lane 1A** (this entry); stock design = **Option A**
