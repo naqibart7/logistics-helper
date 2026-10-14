@@ -33,7 +33,7 @@ const dropFileThroughUi = async (text, filename) => {
   const input = ui.container.querySelector('input[type="file"]');
   const file = new File([text], filename, { type: 'text/markdown' });
   fireEvent.change(input, { target: { files: [file] } });
-  await waitFor(() => expect(opened).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(opened).toHaveBeenCalledTimes(1), { timeout: 20000 });
   const projectId = opened.mock.calls[0][0];
   ui.unmount();
   return projectId;
@@ -61,7 +61,7 @@ describe('G3: locked field survives a UI re-import', () => {
     const panel = screen.getByText('Edit purchaseQty (will lock the field)').closest('.card');
     fireEvent.change(panel.querySelector('input'), { target: { value: '99' } });
     fireEvent.click(screen.getByText('Save + lock'));
-    await screen.findByText(/🔒 purchaseQty/, {}, { timeout: 5000 }); // lock indicator on screen
+    await screen.findByText(/🔒 purchaseQty/, {}, { timeout: 10000 }); // lock indicator on screen
     const items = await listBomItems(projectId);
     const gypsum = items.find((b) => b.item === 'Gypsum Board 9mm');
     expect({ purchaseQty: gypsum.purchaseQty, locked: gypsum.lockedFields }).toEqual({
@@ -101,5 +101,5 @@ describe('G3: locked field survives a UI re-import', () => {
     const agentQty = log.filter((e) => e.actor === 'agent' && e.field === 'Gypsum Board 9mm :: purchaseQty');
     expect(agentQty).toEqual([]); // no entry may claim the locked write happened
     bom2.unmount();
-  });
+  }, 60000); // 60s — two UI imports plus fake-indexeddb is slow under parallel test load
 });

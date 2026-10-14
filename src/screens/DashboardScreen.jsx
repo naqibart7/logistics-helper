@@ -11,18 +11,24 @@ import { listProjectSuppliers } from '../data/supplierRepo.js';
 import { listChangeLog } from '../data/changeLogRepo.js';
 import { latestBomImportRun } from '../data/importRunRepo.js';
 import { formatCurrency, formatShortDate } from '../utils/helpers.js';
+import { checkBomRows } from '../logic/importCheck.js';
 
 /** Storage row -> plain site-diary sentence. No field names leak to the screen. */
 export const changeSentence = (c) => {
   const when = formatShortDate(c.timestamp);
   const who = c.actor === 'supervisor' ? 'Supervisor' : 'Agent';
   if (c.field === 'import_note') return `${who} note · ${when}: ${c.newValue}`;
+  if (c.field === 'verified:purchaseQty' || c.field === 'verified') {
+    const item = c.itemName || c.item || '';
+    return `You verified quantity ${c.newValue}${item ? ` for ${item}` : ''}`;
+  }
   return `${who} · ${when}: ${c.field}: ${String(c.oldValue)} → ${String(c.newValue)}`;
 };
 
-export default function DashboardScreen({ projectId, onGoConfirm }) {
+export default function DashboardScreen({ projectId, onGoConfirm, onGoBom }) {
   const [project, setProject] = useState(null);
   const [stats, setStats] = useState({ lines: 0, total: 0, open: 0, suppliers: 0 });
+  const [reviewCount, setReviewCount] = useState(0);
   const [recent, setRecent] = useState([]);
   const [lastImportRun, setLastImportRun] = useState(null);
   const [clientDraft, setClientDraft] = useState('');
@@ -45,6 +51,20 @@ export default function DashboardScreen({ projectId, onGoConfirm }) {
       open,
       suppliers: links.length,
     });
+    const findings = checkBomRows(items);
+    const findingsByRow = new Map();
+    for (const f of findings) {
+      if (!findingsByRow.has(f.rowId)) findingsByRow.set(f.rowId, []);
+      findingsByRow.get(f.rowId).push(f);
+    }
+    const unverified = items.filter((it) => {
+      const rowFindings = findingsByRow.get(it.id);
+      if (!rowFindings || rowFindings.length === 0) return false;
+      const locked = Array.isArray(it.lockedFields) ? it.lockedFields : [];
+      if (locked.includes('purchaseQty') && !rowFindings.some((f) => f.rule === 'R1')) return false;
+      return true;
+    }).length;
+    setReviewCount(unverified);
     setRecent(log.slice(-5).reverse());
     setLastImportRun(lastRun);
   };
@@ -75,6 +95,24 @@ export default function DashboardScreen({ projectId, onGoConfirm }) {
       ) : (
         <div style={{ marginTop: '1rem' }}>
           <span className="badge status-ready">Ready — PO unlocked</span>
+        </div>
+      )}
+      {stats.lines > 0 && (
+        <div style={{ marginTop: '0.75rem' }} role="status">
+          {reviewCount > 0 ? (
+            <div className="banner notice" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span><strong>Import check:</strong> {reviewCount} {reviewCount === 1 ? 'line' : 'lines'} to review</span>
+              {onGoBom && (
+                <button className="secondary" onClick={onGoBom} style={{ minHeight: '48px', padding: '0.25rem 0.75rem' }}>
+                  To review ({reviewCount})
+                </button>
+              )}
+            </div>
+          ) : (
+            <p className="small" style={{ color: 'var(--text-muted)', margin: '0.5rem 0' }}>
+              No automatic flags. This does not check your drawings.
+            </p>
+          )}
         </div>
       )}
       {lastImportRun && (

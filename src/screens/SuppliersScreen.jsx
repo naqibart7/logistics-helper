@@ -3,15 +3,32 @@
  * Wiring only: linking runs linkSupplierEntry (logic/supplierLinking.js), the
  * same dedupe-by-name rule the import path uses — tapping never duplicates a
  * GlobalSupplier record, it only adds a ProjectSupplierLink.
+ *
+ * Part B enhancements:
+ * B1. Add / edit / delete in-app (dedupe on add, delete blocked when linked).
+ * B2. One-tap WhatsApp & Call with phone normalisation and 'Fix number' fallback.
+ * B3. Verified date badge per supplier ("Verified 14 Oct").
  */
 import React, { useEffect, useState } from 'react';
-import { listProjectSuppliers, listSuppliers, createSupplier, linkSupplierToProject, getSupplier, updateSupplier } from '../data/supplierRepo.js';
+import {
+  listProjectSuppliers,
+  listSuppliers,
+  createSupplier,
+  linkSupplierToProject,
+  getSupplier,
+  updateSupplier,
+  deleteSupplier,
+  countSupplierProjectLinks,
+  unlinkSupplier,
+} from '../data/supplierRepo.js';
 import { linkSupplierEntry } from '../logic/supplierLinking.js';
 import { importSupplierRows } from '../logic/supplierCsvImport.js';
 import { parseSupplierCsv, readUploadAsText } from '../utils/csvImport/index.js';
 import { exportSupplierDirectory } from '../utils/csvImport/csvExport.js';
 import { scoreSupplierCsv, scorecardLine } from '../logic/importScorecard.js';
 import { createImportRun } from '../data/importRunRepo.js';
+import { normalizePhoneForWhatsApp } from '../logic/quickOrder.js';
+import { formatShortDate } from '../utils/helpers.js';
 
 const linkDeps = { listSuppliers, createSupplier, linkSupplierToProject };
 
@@ -25,7 +42,7 @@ const matchesQuery = (s, q) => {
   const query = q.trim().toLowerCase();
   if (!query) return true;
   // Region filtering works through the address text (e.g. "Kuching", "Betong").
-  return [s.businessName, s.specialty, s.address, s.contact]
+  return [s.businessName, s.specialty, s.address, s.contact, s.note, s.logisticsNote]
     .some((f) => String(f || '').toLowerCase().includes(query));
 };
 
@@ -39,6 +56,17 @@ export default function SuppliersScreen({ projectId }) {
   const [notice, setNotice] = useState(null);
   const [pendingCsv, setPendingCsv] = useState(null); // { validRows, rejectedRows, preview } — uncommitted
   const [overwrite, setOverwrite] = useState(false);
+
+  // Modal / form states for Add, Edit, Delete-blocked
+  const [modal, setModal] = useState(null); // null | 'add' | { type: 'edit', supplier } | { type: 'deleteBlocked', supplier, count }
+  const [form, setForm] = useState({
+    businessName: '',
+    contact: '',
+    address: '',
+    specialty: '',
+    tags: '',
+    note: '',
+  });
 
   const reloadLinks = async () => {
     const links = await listProjectSuppliers(projectId);
@@ -125,6 +153,120 @@ export default function SuppliersScreen({ projectId }) {
     setPendingCsv(null);
     setOverwrite(false);
     await reloadLinks();
+    if (browsing) setDirectory(await listSuppliers());
+  };
+
+  // B1: In-app Add Supplier
+  const openAdd = () => {
+    setForm({
+      businessName: '',
+      contact: '',
+      address: '',
+      specialty: '',
+      tags: '',
+      note: '',
+    });
+    setModal('add');
+  };
+
+  // B1: In-app Edit Supplier
+  const openEdit = (supplier) => {
+    setForm({
+      businessName: supplier.businessName || '',
+      contact: supplier.contact || '',
+      address: supplier.address || '',
+      specialty: supplier.specialty || '',
+      tags: Array.isArray(supplier.tags) ? supplier.tags.join(', ') : '',
+      note: supplier.note || supplier.logisticsNote || '',
+    });
+    setModal({ type: 'edit', supplier });
+  };
+
+  const saveSupplier = async (e) => {
+    e.preventDefault();
+    if (!form.businessName.trim()) {
+      setNotice('Business name is required.');
+      return;
+    }
+    const tagsArr = form.tags
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
+    if (modal === 'add') {
+      try {
+        const payload = {
+          businessName: form.businessName.trim(),
+          contact: form.contact.trim() || null,
+          address: form.address.trim() || null,
+          specialty: form.specialty.trim() || null,
+          tags: tagsArr,
+          note: form.note.trim() || null,
+          logisticsNote: form.note.trim() || null,
+        };
+        const s = await linkSupplierEntry(projectId, payload, linkDeps);
+        setNotice(`Supplier "${s.businessName}" saved and linked.`);
+        setModal(null);
+        await reloadLinks();
+        if (browsing) setDirectory(await listSuppliers());
+      } catch (err) {
+        setNotice(`Add failed: ${err.message}`);
+      }
+    } else if (modal && modal.type === 'edit') {
+      try {
+        await updateSupplier(modal.supplier.id, {
+          businessName: form.businessName.trim(),
+          contact: form.contact.trim() || null,
+          address: form.address.trim() || null,
+          specialty: form.specialty.trim() || null,
+          tags: tagsArr,
+          note: form.note.trim() || null,
+          logisticsNote: form.note.trim() || null,
+        });
+        setNotice(`Saved changes to "${form.businessName.trim()}".`);
+        setModal(null);
+        await reloadLinks();
+        if (browsing) setDirectory(await listSuppliers());
+      } catch (err) {
+        setNotice(`Update failed: ${err.message}`);
+      }
+    }
+  };
+
+  // B1: In-app Delete Supplier (blocked if linked to any project)
+  const handleDelete = async (supplier) => {
+    try {
+      const count = await countSupplierProjectLinks(supplier.id);
+      if (count > 0) {
+        setModal({ type: 'deleteBlocked', supplier, count });
+        return;
+      }
+      if (window.confirm(`Delete "${supplier.businessName}" from the global directory?`)) {
+        await deleteSupplier(supplier.id);
+        setNotice(`Deleted "${supplier.businessName}".`);
+        await reloadLinks();
+        if (browsing) setDirectory(await listSuppliers());
+      }
+    } catch (err) {
+      setNotice(`Delete failed: ${err.message}`);
+    }
+  };
+
+  const handleUnlink = async (supplierId) => {
+    await unlinkSupplier(projectId, supplierId);
+    setNotice('Removed link to this project.');
+    setModal(null);
+    await reloadLinks();
+    if (browsing) setDirectory(await listSuppliers());
+  };
+
+  // B3: Verified date toggle
+  const toggleVerified = async (supplier) => {
+    const next = supplier.verifiedDate ? null : new Date().toISOString();
+    await updateSupplier(supplier.id, { verifiedDate: next });
+    setNotice(next ? `Marked "${supplier.businessName}" as verified.` : `Cleared verification for "${supplier.businessName}".`);
+    await reloadLinks();
+    if (browsing) setDirectory(await listSuppliers());
   };
 
   // Tag chips are data-driven: only tags actually present in the directory appear.
@@ -133,12 +275,92 @@ export default function SuppliersScreen({ projectId }) {
     (s) => matchesQuery(s, query) && (activeTag === null || (s.tags || []).includes(activeTag))
   );
 
+  /**
+   * Helper to render one-tap action buttons (WhatsApp, Call, Verified, Edit, Delete).
+   * Adheres strictly to touchTargets (min-height: 48px, min-width: 48px).
+   */
+  const renderActions = (s, isLinked = false) => {
+    const contactVal = s.contact && !/^null$/i.test(String(s.contact).trim()) ? String(s.contact).trim() : null;
+    const digits = contactVal ? normalizePhoneForWhatsApp(contactVal) : null;
+    const callNumber = contactVal ? contactVal.split('/')[0].trim() : null;
+
+    return (
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+        {contactVal && digits && (
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: '0.125rem' }}>
+            <a
+              className="btn secondary"
+              href={`https://wa.me/${digits}`}
+              target="_blank"
+              rel="noreferrer"
+              title="Opens WhatsApp. Nothing is sent."
+              style={{ minHeight: '48px', minWidth: '48px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              WhatsApp
+            </a>
+            <span className="small muted" style={{ fontSize: '0.7rem' }}>Opens WhatsApp. Nothing is sent.</span>
+          </div>
+        )}
+        {contactVal && !digits && (
+          <button
+            className="secondary"
+            onClick={() => openEdit(s)}
+            style={{ minHeight: '48px', minWidth: '48px' }}
+            title="Phone number format needs correction"
+          >
+            Fix number
+          </button>
+        )}
+        {contactVal && callNumber && (
+          <a
+            className="btn secondary"
+            href={`tel:${callNumber}`}
+            style={{ minHeight: '48px', minWidth: '48px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            Call
+          </a>
+        )}
+        <button
+          className="secondary"
+          onClick={() => toggleVerified(s)}
+          style={{ minHeight: '48px', minWidth: '48px' }}
+        >
+          {s.verifiedDate ? 'Unverify' : 'Verify'}
+        </button>
+        <button
+          className="secondary"
+          onClick={() => openEdit(s)}
+          style={{ minHeight: '48px', minWidth: '48px' }}
+        >
+          Edit
+        </button>
+        <button
+          className="secondary"
+          onClick={() => handleDelete(s)}
+          style={{ minHeight: '48px', minWidth: '48px' }}
+        >
+          Delete
+        </button>
+        {browsing && (
+          <button
+            disabled={isLinked}
+            onClick={() => linkRow(s)}
+            style={{ minHeight: '48px', minWidth: '48px' }}
+          >
+            {isLinked ? 'Linked ✓' : 'Link to this project'}
+          </button>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="container">
       <h1>Suppliers ({rows.length})</h1>
       {notice && <div className="card" role="status" style={{ margin: '0.5rem 0' }}>{notice}</div>}
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+        <button onClick={openAdd}>+ Add supplier</button>
         <button className="secondary" onClick={exportCsv}>Export CSV</button>
         <button className="secondary" onClick={() => document.getElementById('csv-file-input').click()}>
           Import CSV
@@ -151,6 +373,101 @@ export default function SuppliersScreen({ projectId }) {
           onChange={(e) => { stageCsvFile(e.target.files[0]); e.target.value = ''; }}
         />
       </div>
+
+      {/* B1: Add / Edit modal */}
+      {(modal === 'add' || (modal && modal.type === 'edit')) && (
+        <div className="card anim-panel" style={{ marginBottom: '1rem', border: '2px solid var(--primary)' }}>
+          <h3>{modal === 'add' ? 'Add new supplier' : `Edit "${modal.supplier.businessName}"`}</h3>
+          <form onSubmit={saveSupplier}>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label className="small" htmlFor="sup-name">Business Name *</label>
+              <input
+                id="sup-name"
+                required
+                value={form.businessName}
+                onChange={(e) => setForm({ ...form, businessName: e.target.value })}
+                style={{ width: '100%', marginTop: '0.25rem' }}
+                placeholder="e.g. Lian Phong Hardware"
+              />
+            </div>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label className="small" htmlFor="sup-contact">Contact Number</label>
+              <input
+                id="sup-contact"
+                value={form.contact}
+                onChange={(e) => setForm({ ...form, contact: e.target.value })}
+                style={{ width: '100%', marginTop: '0.25rem' }}
+                placeholder="e.g. 014-679 0770"
+              />
+            </div>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label className="small" htmlFor="sup-address">Address / Town</label>
+              <input
+                id="sup-address"
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                style={{ width: '100%', marginTop: '0.25rem' }}
+                placeholder="e.g. Betong, Sarawak"
+              />
+            </div>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label className="small" htmlFor="sup-specialty">Specialty</label>
+              <input
+                id="sup-specialty"
+                value={form.specialty}
+                onChange={(e) => setForm({ ...form, specialty: e.target.value })}
+                style={{ width: '100%', marginTop: '0.25rem' }}
+                placeholder="e.g. Timber, Nails, Adhesives"
+              />
+            </div>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label className="small" htmlFor="sup-tags">Tags (comma-separated)</label>
+              <input
+                id="sup-tags"
+                value={form.tags}
+                onChange={(e) => setForm({ ...form, tags: e.target.value })}
+                style={{ width: '100%', marginTop: '0.25rem' }}
+                placeholder="e.g. hardware, local, quick"
+              />
+            </div>
+            <div style={{ marginBottom: '0.5rem' }}>
+              <label className="small" htmlFor="sup-note">Note / Logistics</label>
+              <input
+                id="sup-note"
+                value={form.note}
+                onChange={(e) => setForm({ ...form, note: e.target.value })}
+                style={{ width: '100%', marginTop: '0.25rem' }}
+                placeholder="e.g. Closes at 4pm on Saturdays"
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+              <button type="submit">Save supplier</button>
+              <button type="button" className="secondary" onClick={() => setModal(null)}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* B1: Delete Blocked dialogue */}
+      {modal && modal.type === 'deleteBlocked' && (
+        <div className="card anim-panel banner blocked" style={{ marginBottom: '1rem' }} role="alert">
+          <h3>Cannot delete "{modal.supplier.businessName}"</h3>
+          <p>
+            This supplier is currently used in {modal.count} {modal.count === 1 ? 'project' : 'projects'}.
+            Suppliers linked to projects cannot be deleted from the directory to prevent orphan data.
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+            <button onClick={() => handleUnlink(modal.supplier.id)}>
+              Remove link from this project instead
+            </button>
+            <button className="secondary" onClick={() => setModal(null)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {pendingCsv && (
         <div className="card anim-panel" style={{ marginBottom: '0.5rem' }}>
@@ -219,19 +536,33 @@ export default function SuppliersScreen({ projectId }) {
           <div style={{ marginTop: '0.5rem' }}>
             {visible.map((s) => {
               const linked = linkedIds.has(s.id);
+              const hasContact = s.contact && !/^null$/i.test(String(s.contact).trim());
               return (
-                <div key={s.id} style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--border)' }}>
-                  <strong>{s.businessName}</strong>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                <div key={s.id} style={{ padding: '0.75rem 0', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <strong>{s.businessName}</strong>
+                    {s.verifiedDate && (
+                      <span className="badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                        Verified {formatShortDate(s.verifiedDate)}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
                     {[s.specialty, s.address].filter(Boolean).join(' · ')}
                   </div>
-                  <button
-                    disabled={linked}
-                    onClick={() => linkRow(s)}
-                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', marginTop: '0.25rem' }}
-                  >
-                    {linked ? 'Linked ✓' : 'Link to this project'}
-                  </button>
+                  {hasContact ? (
+                    <div style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>Contact: {s.contact}</div>
+                  ) : (
+                    <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                      Contact not listed
+                    </div>
+                  )}
+                  {(s.note || s.logisticsNote) && (
+                    <div style={{ fontSize: '0.875rem', marginTop: '0.25rem', color: 'var(--text-muted)' }}>
+                      Note: {s.note || s.logisticsNote}
+                    </div>
+                  )}
+                  {renderActions(s, linked)}
                 </div>
               );
             })}
@@ -239,28 +570,43 @@ export default function SuppliersScreen({ projectId }) {
               <p style={{ color: 'var(--text-muted)' }}>No suppliers match.</p>
             )}
           </div>
-          <button onClick={() => setBrowsing(false)} style={{ marginTop: '0.5rem' }}>
+          <button onClick={() => setBrowsing(false)} style={{ marginTop: '0.75rem' }}>
             Back to project suppliers
           </button>
         </div>
       )}
 
-      {rows.map(({ link, supplier }) => (
-        <div key={`${link.projectId}-${link.globalSupplierId}`} className="card" style={{ marginBottom: '0.5rem' }}>
-          <strong>{supplier.businessName}</strong>
-          <div style={{ fontSize: '0.875rem' }}>
-            {supplier.contact && !/^null$/i.test(String(supplier.contact).trim())
-              ? <div>Contact: {supplier.contact}</div>
-              : <div style={{ color: 'var(--text-muted)' }}>Contact not listed</div>}
-            {supplier.address && <div>{supplier.address}</div>}
-            {supplier.specialty && <div>Specialty: {supplier.specialty}</div>}
-            {supplier.logisticsNote && <div>Logistics: {supplier.logisticsNote}</div>}
-            {supplier.sourceUrl && (
-              <div><a className="btn" href={supplier.sourceUrl} target="_blank" rel="noreferrer">Source</a></div>
-            )}
+      {rows.map(({ link, supplier }) => {
+        const hasContact = supplier.contact && !/^null$/i.test(String(supplier.contact).trim());
+        return (
+          <div key={`${link.projectId}-${link.globalSupplierId}`} className="card" style={{ marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <strong>{supplier.businessName}</strong>
+              {supplier.verifiedDate && (
+                <span className="badge" style={{ background: '#dcfce7', color: '#166534' }}>
+                  Verified {formatShortDate(supplier.verifiedDate)}
+                </span>
+              )}
+            </div>
+            <div style={{ fontSize: '0.875rem', marginTop: '0.25rem' }}>
+              {hasContact ? (
+                <div>Contact: {supplier.contact}</div>
+              ) : (
+                <div style={{ color: 'var(--text-muted)' }}>Contact not listed</div>
+              )}
+              {supplier.address && <div>{supplier.address}</div>}
+              {supplier.specialty && <div>Specialty: {supplier.specialty}</div>}
+              {(supplier.note || supplier.logisticsNote) && (
+                <div>Note: {supplier.note || supplier.logisticsNote}</div>
+              )}
+              {supplier.sourceUrl && (
+                <div><a className="btn" href={supplier.sourceUrl} target="_blank" rel="noreferrer">Source</a></div>
+              )}
+            </div>
+            {renderActions(supplier, true)}
           </div>
-        </div>
-      ))}
+        );
+      })}
       {rows.length === 0 && (
         <p style={{ color: 'var(--text-muted)' }}>No suppliers linked to this project.</p>
       )}

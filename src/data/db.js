@@ -81,12 +81,14 @@ export const seedInitialSuppliers = async () => {
 export const clearAllTables = async () => {
   await db.transaction(
     'rw',
-    [db.projects, db.bomItems, db.shortageItems, db.globalSuppliers, db.supplierLinks, db.changeLog, db.presets, db.importRuns],
+    [db.projects, db.bomItems, db.shortageItems, db.stockItems, db.stockMovements, db.globalSuppliers, db.supplierLinks, db.changeLog, db.presets, db.importRuns],
     async () => {
       await Promise.all([
         db.projects.clear(),
         db.bomItems.clear(),
         db.shortageItems.clear(),
+        db.stockItems.clear(),
+        db.stockMovements.clear(),
         db.globalSuppliers.clear(),
         db.supplierLinks.clear(),
         db.changeLog.clear(),

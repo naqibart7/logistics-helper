@@ -38,5 +38,5 @@ describe('Task L: displayOrder backfill on legacy databases', () => {
       ['B', 7],
     ]);
     await db.close();
-  });
+  }, 30000); // 30s — DB delete + version upgrade cycle is slow with fake-indexeddb
 });

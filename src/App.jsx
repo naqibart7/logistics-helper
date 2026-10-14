@@ -47,6 +47,7 @@ export default function App() {
   const [subScreen, setSubScreen] = useState(null);
   const [gateNotice, setGateNotice] = useState(null);
   const [openCount, setOpenCount] = useState(0);
+  const [bomReviewFilter, setBomReviewFilter] = useState(false);
   // Lane 2: visible sync state ("Local only" until a cloud DB is configured).
   const [syncInfo, setSyncInfo] = useState(isSyncEnabled() ? getSyncInfo() : null);
 
@@ -138,12 +139,19 @@ export default function App() {
         </div>
       )}
 
-      {tab === 'dashboard' && <DashboardScreen projectId={projectId} onGoConfirm={() => setTab('confirm')} />}
+      {tab === 'dashboard' && (
+        <DashboardScreen
+          projectId={projectId}
+          onGoConfirm={() => setTab('confirm')}
+          onGoBom={() => { setBomReviewFilter(true); setTab('bom'); }}
+        />
+      )}
       {tab === 'bom' && (
         <BomScreen
           projectId={projectId}
           onGoSuppliers={() => setTab('suppliers')}
           onAddItem={() => setSubScreen('addItem')}
+          initialReviewFilter={bomReviewFilter}
         />
       )}
       {tab === 'confirm' && <ConfirmScreen projectId={projectId} onChanged={() => refreshGate(projectId)} />}

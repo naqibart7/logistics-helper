@@ -13,6 +13,9 @@ export const createSupplier = async (partial) => {
     specialty: partial.specialty ?? null,
     sourceUrl: partial.sourceUrl ?? null,
     tags: Array.isArray(partial.tags) ? [...partial.tags] : [],
+    note: partial.note ?? partial.logisticsNote ?? null,
+    logisticsNote: partial.logisticsNote ?? partial.note ?? null,
+    verifiedDate: partial.verifiedDate ?? null,
   };
   await db.globalSuppliers.add(row);
   return row;
@@ -27,6 +30,9 @@ export const bulkCreateSuppliers = async (partials) => {
     specialty: p.specialty ?? null,
     sourceUrl: p.sourceUrl ?? null,
     tags: Array.isArray(p.tags) ? [...p.tags] : [],
+    note: p.note ?? p.logisticsNote ?? null,
+    logisticsNote: p.logisticsNote ?? p.note ?? null,
+    verifiedDate: p.verifiedDate ?? null,
   }));
   await db.globalSuppliers.bulkAdd(rows);
   return rows;
@@ -44,7 +50,13 @@ export const getAllSuppliersForExport = () =>
   db.globalSuppliers.orderBy('businessName').toArray();
 
 export const updateSupplier = async (id, patch) => {
-  await db.globalSuppliers.update(id, patch);
+  const safe = { ...patch };
+  if (safe.note !== undefined && safe.logisticsNote === undefined) {
+    safe.logisticsNote = safe.note;
+  } else if (safe.logisticsNote !== undefined && safe.note === undefined) {
+    safe.note = safe.logisticsNote;
+  }
+  await db.globalSuppliers.update(id, safe);
   return db.globalSuppliers.get(id);
 };
 
@@ -60,6 +72,24 @@ export const listProjectSuppliers = (projectId) =>
 export const unlinkSupplier = (projectId, globalSupplierId) =>
   db.supplierLinks.delete([projectId, globalSupplierId]);
 
+export const countSupplierProjectLinks = (globalSupplierId) =>
+  db.supplierLinks.where('globalSupplierId').equals(globalSupplierId).count();
+
+export const listSupplierLinks = (globalSupplierId) =>
+  db.supplierLinks.where('globalSupplierId').equals(globalSupplierId).toArray();
+
+export const deleteSupplier = async (id) => {
+  const count = await countSupplierProjectLinks(id);
+  if (count > 0) {
+    throw new Error(`Cannot delete supplier: used in ${count} project${count === 1 ? '' : 's'}`);
+  }
+  await db.globalSuppliers.delete(id);
+  return true;
+};
+
+export const removeSupplierAllLinks = (globalSupplierId) =>
+  db.supplierLinks.where('globalSupplierId').equals(globalSupplierId).delete();
+
 export default {
   createSupplier,
   bulkCreateSuppliers,
@@ -70,4 +100,8 @@ export default {
   linkSupplierToProject,
   listProjectSuppliers,
   unlinkSupplier,
+  countSupplierProjectLinks,
+  listSupplierLinks,
+  deleteSupplier,
+  removeSupplierAllLinks,
 };

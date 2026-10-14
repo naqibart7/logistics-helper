@@ -11,56 +11,74 @@
  *
  * The ledger is honesty-bound via lastVerifiedAt + periodic physical recount (adjustment
  * movement). All history is preserved; balance is computed on read.
+ *
+ * Movement types: 'starting' | 'received' | 'used' | 'adjustment' | 'reversal'.
+ * - 'adjustment' may be written ONLY by recordRecount (physical recount reconciliation).
+ * - 'reversal' is written by any undo (e.g. unticking fromStock). It carries reversesId
+ *   (the movement it undoes) and reversesType ('used' or 'received').
+ * - The future weekly accuracy digest reads ONLY 'adjustment' rows and ignores 'reversal'.
  */
 import db from './db.js';
 import { itemKey } from '../logic/itemMatcher.js';
 
+const genId = () =>
+  (crypto && typeof crypto.randomUUID === 'function')
+    ? crypto.randomUUID()
+    : `stock-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
 /** StockItem fields (persisted in Dexie). */
 export const StockItem = {
-  id: crypto.randomUUID ?? crypto.randomUUID,
-  itemKey: '', // normalized: itemName|spec — populated when item first added
+  id: genId,
+  itemKey: '',
   description: '',
   unit: '',
-  startingCount: 0, // one-time baseline, set when item first added to tracking
-  minThreshold: 0,  // "key-item min" — below this, low-stock badge shows
-  lastVerifiedAt: null, // ISO date string of last physical recount
-  location: null,   // rack or zone where item is stored
-  isKeyItem: false, // flag: this is a "key item" tracked for low-stock pings
-  workersOftenTake: false, // flag: item is commonly consumed by workshop staff
+  startingCount: null, // null = unset. UNSET IS NOT ZERO.
+  minThreshold: null,   // null = unset (no low-stock flag). 0 is a real value.
+  lastVerifiedAt: null,
+  location: null,
+  isKeyItem: false,
+  workersOftenTake: false,
 };
 
 /** StockMovement fields (persisted in Dexie). */
 export const StockMovement = {
-  id: crypto.randomUUID ?? crypto.randomUUID,
-  itemKey,
-  type: 'starting' | 'received' | 'used' | 'adjustment', // always positive qty; type adds/subtracts
-  quantity: 0, // always positive
+  id: genId,
+  itemKey: '',
+  type: 'starting', // 'starting' | 'received' | 'used' | 'adjustment' | 'reversal'
+  quantity: 0,
   linkedProjectId: null, // set when type is 'used'
   linkedSupplierId: null, // set when type is 'received'
-  actor: 'supervisor', // all manual taps — there's no agent writing to this ledger
+  reversesId: null, // set when type is 'reversal' — id of the undone movement
+  reversesType: null, // set when type is 'reversal' — 'used' or 'received'
+  actor: 'supervisor',
   note: '',
   timestamp: new Date().toISOString(),
 };
 
 /** Default empty StockItem — used when first adding a new tracked item. */
 export const newStockItem = () => ({
-  id: StockItem.id,
+  id: genId(),
   itemKey: '',
   description: '',
   unit: '',
-  startingCount: 0,
-  minThreshold: 0,
+  startingCount: null,
+  minThreshold: null,
   lastVerifiedAt: null,
+  location: null,
+  isKeyItem: false,
+  workersOftenTake: false,
 });
 
 /** Default empty StockMovement row. */
 export const newStockMovement = () => ({
-  id: StockMovement.id,
+  id: genId(),
   itemKey: '',
   type: 'starting',
   quantity: 0,
   linkedProjectId: null,
   linkedSupplierId: null,
+  reversesId: null,
+  reversesType: null,
   actor: 'supervisor',
   note: '',
   timestamp: new Date().toISOString(),
@@ -68,143 +86,213 @@ export const newStockMovement = () => ({
 
 /**
  * Compute predicted balance for a StockItem.
- * Sum of all movements: startingCount + (received qty) − (used qty).
- * Adjustment qty is added/subtracted per its sign (positive = add, negative = subtract)
- * but stored as absolute positive with type 'adjustment'.
- * Never stores the balance as a mutable field — computed on read.
+ *
+ * RULE: UNSET IS NOT ZERO.
+ * - If startingCount is null/undefined, the balance is null. The UI shows
+ *   "Needs starting count" and the item never counts toward the low-stock badge.
+ * - If minThreshold is null/undefined, no low-stock flag is ever raised.
+ *   A minThreshold of 0 is a real value and IS compared against.
+ * - Coalescing (treating null as 0) is allowed for summing movements only, never
+ *   for the baseline startingCount.
+ *
+ * Adjustment (from physical recount) is added. Reversal undoes the movement it
+ * points at: a reversal of a 'used' movement adds the quantity back; a reversal
+ * of a 'received' movement removes it.
  *
  * @param {StockItem} item
  * @param {StockMovement[]} movements
- * @returns {number} predicted balance
+ * @returns {number|null} predicted balance, or null when startingCount is unset
  */
 export const computePredictedBalance = (item, movements) => {
-  const starting = item.startingCount ?? 0;
+  const starting = item?.startingCount;
+  if (starting === null || starting === undefined) {
+    return null;
+  }
   const received = movements
     .filter((m) => m.type === 'received')
-    .reduce((sum, m) => sum + m.quantity, 0);
+    .reduce((sum, m) => sum + Number(m.quantity ?? 0), 0);
   const used = movements
     .filter((m) => m.type === 'used')
-    .reduce((sum, m) => sum + m.quantity, 0);
+    .reduce((sum, m) => sum + Number(m.quantity ?? 0), 0);
   const adjustment = movements
     .filter((m) => m.type === 'adjustment')
-    .reduce((sum, m) => sum + m.quantity * (m.linkedProjectId === null ? 1 : 1), 0); // adjustment always adds
-  return starting + received - used;
+    .reduce((sum, m) => sum + Number(m.quantity ?? 0), 0);
+  const reversalOfUsed = movements
+    .filter((m) => m.type === 'reversal' && m.reversesType === 'used')
+    .reduce((sum, m) => sum + Number(m.quantity ?? 0), 0);
+  const reversalOfReceived = movements
+    .filter((m) => m.type === 'reversal' && m.reversesType === 'received')
+    .reduce((sum, m) => sum + Number(m.quantity ?? 0), 0);
+  return Number(starting) + received - used + adjustment + reversalOfUsed - reversalOfReceived;
+};
+
+const getItemByKey = async (itemKeyVal) => {
+  const rows = await db.stockItems.where('itemKey').equals(itemKeyVal).toArray();
+  return rows.length > 0 ? rows[0] : null;
 };
 
 /**
  * Get the predicted balance from the Dexie store for a given itemKey.
- * Reads all movements and computes on demand.
  *
- * @param {string} itemKey
- * @returns {number} predicted balance
+ * @param {string} itemKeyVal
+ * @returns {Promise<number|null>} predicted balance, or null if unset
  */
-export const getPredictedBalance = (itemKey) => {
-  const movements = db.stockMovements.where('itemKey').equals(itemKey).toArray();
-  return computePredictedBalance(
-    db.stockItems.get(itemKey),
-    movements
-  );
+export const getPredictedBalance = async (itemKeyVal) => {
+  const [item, movements] = await Promise.all([
+    getItemByKey(itemKeyVal),
+    db.stockMovements.where('itemKey').equals(itemKeyVal).toArray(),
+  ]);
+  if (!item) return null;
+  return computePredictedBalance(item, movements);
 };
 
-/** Append a new movement to the ledger. */
+/** Append a new movement to the ledger. Returns the stored row. */
 export const addMovement = async (movement) => {
   const row = {
     ...movement,
-    id: Movement.id,
+    id: movement.id || genId(),
+    timestamp: movement.timestamp || new Date().toISOString(),
   };
   await db.stockMovements.add(row);
+  return row;
 };
 
 /** Set the starting count for a new StockItem and write it. */
-export const setStartingCount = async (itemKey, startingCount) => {
-  await db.stockItems.put({
-    id: crypto.randomUUID ?? crypto.randomUUID,
-    itemKey,
-    startingCount,
-    minThreshold: 0, // will be set separately via updateMinThreshold
+export const setStartingCount = async (itemKeyVal, startingCount) => {
+  const existing = await getItemByKey(itemKeyVal);
+  if (existing) {
+    await db.stockItems.update(existing.id, {
+      startingCount: Number(startingCount),
+      lastVerifiedAt: new Date().toISOString(),
+    });
+    return existing.id;
+  }
+  const id = genId();
+  await db.stockItems.add({
+    id,
+    itemKey: itemKeyVal,
+    description: '',
+    unit: '',
+    startingCount: Number(startingCount),
+    minThreshold: null,
     lastVerifiedAt: new Date().toISOString(),
+    location: null,
+    isKeyItem: false,
+    workersOftenTake: false,
   });
+  return id;
 };
 
 /** Update the minThreshold for a StockItem. */
-export const updateMinThreshold = async (itemKey, minThreshold) => {
-  await db.stockItems.update(
-    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
-    { minThreshold }
-  );
+export const updateMinThreshold = async (itemKeyVal, minThreshold) => {
+  const row = await getItemByKey(itemKeyVal);
+  if (!row) return null;
+  await db.stockItems.update(row.id, { minThreshold: Number(minThreshold) });
+  return db.stockItems.get(row.id);
 };
 
 /** Set the storage location (rack/zone) for a StockItem. */
-export const setItemLocation = async (itemKey, location) => {
-  await db.stockItems.update(
-    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
-    { location }
-  );
+export const setItemLocation = async (itemKeyVal, location) => {
+  const row = await getItemByKey(itemKeyVal);
+  if (!row) return null;
+  await db.stockItems.update(row.id, { location });
+  return db.stockItems.get(row.id);
 };
 
 /** Set the key-item flag for a StockItem. */
-export const setItemKeyItem = async (itemKey, isKeyItem) => {
-  await db.stockItems.update(
-    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
-    { isKeyItem }
-  );
+export const setItemKeyItem = async (itemKeyVal, isKeyItem) => {
+  const row = await getItemByKey(itemKeyVal);
+  if (!row) return null;
+  await db.stockItems.update(row.id, { isKeyItem: !!isKeyItem });
+  return db.stockItems.get(row.id);
 };
 
 /** Set the workers-often-take flag for a StockItem. */
-export const setWorkersOftenTake = async (itemKey, workersOftenTake) => {
-  await db.stockItems.update(
-    db.stockItems.where('itemKey').equals(itemKey).primaryKey,
-    { workersOftenTake }
-  );
+export const setWorkersOftenTake = async (itemKeyVal, workersOftenTake) => {
+  const row = await getItemByKey(itemKeyVal);
+  if (!row) return null;
+  await db.stockItems.update(row.id, { workersOftenTake: !!workersOftenTake });
+  return db.stockItems.get(row.id);
 };
 
-/** Record a physical recount — writes an adjustment movement and updates lastVerifiedAt. */
-export const recordRecount = async (itemKey, realCount, notedBy = 'supervisor') => {
-  const item = db.stockItems.get(itemKey);
-  if (!item) return;
+/**
+ * Record a physical recount — writes an 'adjustment' movement (the ONLY place
+ * 'adjustment' is written) and updates lastVerifiedAt.
+ */
+export const recordRecount = async (itemKeyVal, realCount, notedBy = 'supervisor') => {
+  const item = await getItemByKey(itemKeyVal);
+  if (!item) return null;
 
-  const predicted = getPredictedBalance(itemKey);
-  const adjustment = realCount - predicted;
+  const predicted = await getPredictedBalance(itemKeyVal);
+  const real = Number(realCount);
+  const baseline = predicted === null ? 0 : predicted;
+  const delta = real - baseline;
 
-  await db.stockItems.put({
-    id: item.id,
-    itemKey: item.itemKey,
-    description: item.description,
-    unit: item.unit,
-    startingCount: item.startingCount,
-    minThreshold: item.minThreshold,
+  await db.stockItems.update(item.id, {
     lastVerifiedAt: new Date().toISOString(),
   });
 
-  await addMovement({
-    itemKey,
-    type: 'adjustment',
-    quantity: Math.abs(adjustment),
-    note: `Recount adjustment: ${adjustment > 0 ? 'added' : 'removed'} ${Math.abs(
-      adjustment
-    )} ${item.unit || ''}. Real: ${realCount}, Predicted: ${predicted}. Noted by: ${notedBy}`,
-    timestamp: new Date().toISOString(),
-  });
+  if (delta !== 0) {
+    const unit = item.unit || '';
+    const direction = delta > 0 ? 'added' : 'removed';
+    await addMovement({
+      itemKey: itemKeyVal,
+      type: 'adjustment',
+      quantity: Math.abs(delta),
+      linkedProjectId: null,
+      linkedSupplierId: null,
+      actor: notedBy,
+      note: `Recount adjustment: ${direction} ${Math.abs(delta)} ${unit}. Real: ${real}, Predicted: ${predicted}. Noted by: ${notedBy}`,
+      timestamp: new Date().toISOString(),
+    });
+  }
+  return db.stockItems.get(item.id);
 };
 
-/** Write a `received` movement for a StockItem (auto-called when supplier order is marked received). */
-export const writeReceivedMovement = async (itemKey, quantity, supplierId) => {
-  await addMovement({
-    itemKey,
+/** Write a `received` movement for a StockItem. Returns the stored movement row. */
+export const writeReceivedMovement = async (itemKeyVal, quantity, supplierId) => {
+  return addMovement({
+    itemKey: itemKeyVal,
     type: 'received',
-    quantity,
-    linkedSupplierId: supplierId,
+    quantity: Number(quantity),
+    linkedSupplierId: supplierId || null,
+    actor: 'supervisor',
     timestamp: new Date().toISOString(),
   });
 };
 
-/** Write a `used` movement for a StockItem linked to a project (auto-called when prepared-from-stock toggle is used). */
-export const writeUsedMovement = async (itemKey, quantity, projectId) => {
-  await addMovement({
-    itemKey,
+/** Write a `used` movement for a StockItem linked to a project. Returns the stored movement row. */
+export const writeUsedMovement = async (itemKeyVal, quantity, projectId) => {
+  return addMovement({
+    itemKey: itemKeyVal,
     type: 'used',
-    quantity,
-    linkedProjectId: projectId,
+    quantity: Number(quantity),
+    linkedProjectId: projectId || null,
+    actor: 'supervisor',
+    timestamp: new Date().toISOString(),
+  });
+};
+
+/**
+ * Write a `reversal` movement that undoes the movement identified by reversesId.
+ * The reversal carries reversesType ('used' or 'received') so computePredictedBalance
+ * knows which bucket to apply it to. quantity is the amount to reverse (must match
+ * the reversed movement's quantity for a full undo).
+ */
+export const writeReversalMovement = async ({ itemKeyVal, reversesId, reversesType, quantity, actor = 'supervisor', note = '' }) => {
+  if (!['used', 'received'].includes(reversesType)) {
+    throw new Error(`writeReversalMovement: reversesType must be 'used' or 'received', got ${reversesType}`);
+  }
+  return addMovement({
+    itemKey: itemKeyVal,
+    type: 'reversal',
+    quantity: Number(quantity),
+    linkedProjectId: null,
+    linkedSupplierId: null,
+    reversesId,
+    reversesType,
+    actor,
+    note: note || `Reversed ${reversesType} movement ${reversesId}.`,
     timestamp: new Date().toISOString(),
   });
 };
@@ -216,13 +304,47 @@ export const listStockItems = () => db.stockItems.toArray();
 export const listStockMovements = () => db.stockMovements.toArray();
 
 /** Filter stock items currently below minThreshold. */
-export const listLowStockItems = () => {
-  const items = listStockItems();
-  return items.filter((item) => {
-    const balance = getPredictedBalance(item.itemKey);
-    return balance < item.minThreshold;
-  });
+export const listLowStockItems = async () => {
+  const items = await listStockItems();
+  const result = [];
+  for (const item of items) {
+    // UNSET minThreshold (null) → never low-stock.
+    if (item.minThreshold === null || item.minThreshold === undefined) continue;
+    const balance = await getPredictedBalance(item.itemKey);
+    // UNSET startingCount (balance null) → never low-stock.
+    if (balance === null) continue;
+    if (balance < Number(item.minThreshold)) {
+      result.push(item);
+    }
+  }
+  return result;
 };
 
 /** Get the in-app low-stock badge count. */
-export const getLowStockBadgeCount = () => listLowStockItems().length;
+export const getLowStockBadgeCount = async () => {
+  const low = await listLowStockItems();
+  return low.length;
+};
+
+export default {
+  StockItem,
+  StockMovement,
+  newStockItem,
+  newStockMovement,
+  computePredictedBalance,
+  getPredictedBalance,
+  addMovement,
+  setStartingCount,
+  updateMinThreshold,
+  setItemLocation,
+  setItemKeyItem,
+  setWorkersOftenTake,
+  recordRecount,
+  writeReceivedMovement,
+  writeUsedMovement,
+  writeReversalMovement,
+  listStockItems,
+  listStockMovements,
+  listLowStockItems,
+  getLowStockBadgeCount,
+};

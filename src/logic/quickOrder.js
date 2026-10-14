@@ -33,7 +33,15 @@ export const eligibleOrderItems = (bomItems, supplierId, openConfirmItems) => {
   const eligible = [];
   const excluded = [];
   for (const b of owned) {
-    (refs.has(itemKey(b.item, b.spec)) ? excluded : eligible).push(b);
+    const explicitlyBlocked = refs.has(itemKey(b.item, b.spec));
+    // fromStock = "taking this from the shelf, not ordering it" → always excluded.
+    // doubtful is a visual-only flag (Annex E restored): it does NOT change quick-order eligibility.
+    const fromStock = b.fromStock === true;
+    if (explicitlyBlocked || fromStock) {
+      excluded.push(b);
+    } else {
+      eligible.push(b);
+    }
   }
   return { eligible, excluded };
 };

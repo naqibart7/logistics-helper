@@ -38,3 +38,6 @@ export const getLastMovementTimestamp = (itemKey) => {
 
 /** Delete a movement by id. */
 export const deleteMovement = (id) => db.stockMovements.delete(id);
+
+/** Get a single movement by its id. */
+export const getMovement = (id) => db.stockMovements.get(id);

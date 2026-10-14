@@ -4,7 +4,7 @@
 
 Pipeline: `logistics_helper_v3_build_pipeline.md` (5 agents). Status: **all 5 agents done, verified**.
 Follow-ups Task A (same-run fixtures) + Task B (dead-file deletion) + Tasks C/D (README count, supplier browser) + Tasks E/F (dedupe key, PO PDF) + Task G (Phase 5 audit): **done, verified** (G4 physical-device test is human-run — checklist below).
-Verification: `npx vitest run` → **34 files, 143 tests (141 pass, 2 timeout flakes under parallel load — both pass in isolation)**. `npx vite build` → **green**.
+Verification: `npx vitest run` → **36 files, 193 tests (all 193 pass)**. `npx vite build` → **green (built in 9.73s)**.
 
 ## Agent 1 — Parser ✅ (Task A: deep equality, 2026-09-11)
 Files: `src/utils/importParser/{detectFormat,mdReader,xlsxReader,normalize,index}.js`
@@ -649,3 +649,48 @@ config` validates (resolves `.env` → 6 vars). **Live VM deploy remains BLOCKED
 created) and (b) the BotFather token decision (v2 currently reuses Teleport's @A7Prod_bot;
 single-poller rule forces a cutover — new token recommended). Docker Desktop isn't running
 locally, so the image build completes on the VM in Phase 4 of DEPLOY.md.
+
+
+---
+
+## Import Check & Suppliers Enhancement ✅ (2026-10-14)
+Source instruction: `TRAE_INSTRUCTION_IMPORT_CHECK_AND_SUPPLIERS.md`.
+
+### Part A — Import Check (Accuracy of AI-Made BOMs)
+Files: `src/logic/importCheck.js`, `src/screens/BomScreen.jsx`, `src/screens/DashboardScreen.jsx`
+- **Checker Logic (`importCheck.js`)**: Pure function `checkBomRows(rows) → findings[]` computing findings dynamically on read (never persisted).
+  - **R1 Line Total**: Flags if `purchaseQty × unitCost` deviates from `estTotal` beyond `max(0.01, 0.5% of estTotal)`. TBD/null prices strictly ignored.
+  - **R2 Under-Buy**: Flags if `purchaseQty < netQty` (strict) or below `netQty × (1 + wastage)` with tolerance tuning (`gap > 0.1`) to ignore fractional piece/can packaging rounding dust.
+  - **R3 Provenance**: Flags weak basis (`A`, `NS`) and low confidence (`low`, `uncertain`) where AI admits uncertainty.
+  - **R4 Missing Essentials**: Flags purchaseQty missing or $\le 0$, empty unit, or malformed prices (e.g. `"TBC"`).
+  - **R5 Duplicates**: Flags identical normalised `item + spec` appearing more than once in the project.
+- **Fixture Proving (A2)**:
+  - `Surau_Darul_Dakwah_BOM.md` and `Surau_Darul_Dakwah_BOM_A7_Grounded_Sourcing.xlsx`: Evaluated 3 initial findings (`PVC Wainscoting` gap 0.04, `PVC Skirting` gap 0.03, `Jotun Paint` gap 0.08) as false positives caused by piece/5L can packaging rounding. Tuned R2 wastage tolerance (`gap > 0.1`) $\rightarrow$ 0 findings (clean baseline).
+  - `Artseven_BOM_Q260163_Kediaman_Puan_Hashima_v2.xlsx`: Found 2 real issues (`Access Equipment` low confidence, `Super Glue 10g` 0 purchase quantity). Golden test locked in `tests/importCheck.test.js`.
+- **UI & Verified Flow (A3 & A4)**:
+  - Sorted R3 and R1 first, then `estTotal` descending.
+  - Dashboard renders non-blocking review banner: `"Import check: N lines to review"` with one-tap link to BOM `"To review (N)"` filter, or `"No automatic flags. This does not check your drawings."` when clean.
+  - Flagged rows render accessible `"Check"` badge + reason list with 48px touch targets. Never blocks PO generation.
+  - One-tap `"Verified"` locks `purchaseQty` (+ numeric `unitCost`) via `lockField` and records `ChangeLogEntry` (`actor: 'supervisor'`, `field: 'verified:purchaseQty'`).
+  - Dashboard diary sentence formats cleanly to `"You verified quantity 12 for Gypsum Board 9mm"` with zero raw field names leaked.
+
+### Part B — Suppliers Tab Usable on Its Own
+Files: `src/screens/SuppliersScreen.jsx`, `src/data/supplierRepo.js`
+- **B0 Audit**: Identified missing in-app add, edit, delete, WhatsApp, Call, and note capabilities. Tag/town filtering was verified present.
+- **B1 In-App Add / Edit / Delete**:
+  - `+ Add supplier`: Uses `linkSupplierEntry` dedupe rule (same name and address never duplicates; reuses existing GlobalSupplier).
+  - In-app `Edit`: Updates name, contact, address, specialty, tags, and note in Dexie.
+  - In-app `Delete`: Blocked if linked to projects (`countSupplierProjectLinks > 0`), reporting `"used in N projects"` and offering project link removal instead. Unlinked suppliers can be deleted cleanly.
+- **B2 One-Tap Actions**:
+  - `WhatsApp`: Direct `https://wa.me/<digits>` link using `normalizePhoneForWhatsApp`, accompanied by copy: `"Opens WhatsApp. Nothing is sent."`
+  - Inline `"Fix number"` button appears when contact number is malformed instead of rendering broken links.
+  - `Call`: Direct `tel:` link.
+  - Null/empty contacts render `"Contact not listed"` with no action buttons and never display `"NULL"`.
+- **B3 Verified Date**:
+  - Manual verification date toggle renders a word badge (`"Verified 14 Oct 2026"`).
+  - Quick Order modal in `BomScreen.jsx` displays soft note `⚠️ Number not verified` for unverified suppliers (warning only, never blocks ordering).
+
+### Verification
+- `npx vitest run`: **36 test files, 193 tests, 100% passing** (includes 43 tests in `tests/importCheck.test.js` and 7 tests in `tests/suppliersTab.test.jsx`).
+- `npx vite build`: **Production build succeeded in 9.73s**.
+- Protected files (`mergeEngine.js`, `poGate.js`, `supplierLinking.js`, `poDocument.js`) remain 100% untouched.

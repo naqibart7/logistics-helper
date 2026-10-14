@@ -28,6 +28,14 @@ import {
   renderBomExportPdf,
 } from '../logic/bomExportDocument.js';
 import { formatCurrency, formatNumber, formatShortDate, byDisplayOrder } from '../utils/helpers.js';
+import { checkBomRows } from '../logic/importCheck.js';
+import {
+  writeUsedMovement,
+  writeReversalMovement,
+  listStockItems,
+  getPredictedBalance,
+} from '../data/stockRepo.js';
+import { getMovement as getStockMovement } from '../data/stockMovementRepo.js';
 
 const editDeps = {
   getBomItem: bomRepo.getBomItem,
@@ -74,7 +82,7 @@ const SupplierPicker = ({ suppliers, value, itemName, onAssign }) => {
   );
 };
 
-export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
+export default function BomScreen({ projectId, onGoSuppliers, onAddItem, initialReviewFilter = false }) {
   const [items, setItems] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [projectName, setProjectName] = useState('');
@@ -88,9 +96,19 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
   // 'category' (review grouping), 'flat' (raw displayOrder). Stored order,
   // merge matching, and reorder semantics never see this state.
   const [view, setView] = useState('supplier');
+  const [preparedFilter, setPreparedFilter] = useState('all'); // 'all' | 'not' | 'prepared'
   const [orderCtx, setOrderCtx] = useState(null); // { supplier, eligible, excluded }
   const [noteDraft, setNoteDraft] = useState('');
   const [orderError, setOrderError] = useState(null);
+  // Import check state: findings from checkBomRows(), and supervisor-verified row ids.
+  // Verified ids are ephemeral UI state — not persisted; they move a row out of "To review"
+  // until the next page reload (the ChangeLogEntry + lock are the durable record).
+  const [importCheckFilter, setImportCheckFilter] = useState(initialReviewFilter);
+  const [verifiedIds, setVerifiedIds] = useState(new Set());
+
+  useEffect(() => {
+    if (initialReviewFilter) setImportCheckFilter(true);
+  }, [initialReviewFilter]);
 
   const reload = async () => {
     const [rows, project, links, confirms] = await Promise.all([
@@ -113,6 +131,47 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
   }, [projectId]);
 
   const ordered = byDisplayOrder(items);
+
+  // BOM checklist header: N of M prepared. Plain count, no percentage, no progress bar.
+  const preparedCount = ordered.filter((it) => !!it.prepared).length;
+  const totalCount = ordered.length;
+
+  // Filter by preparation state. Composes with the Suppliers/Category/All grouping —
+  // grouping counts still sum to the header total because the header counts ALL items.
+  const preparedFiltered = ordered.filter((it) => {
+    if (preparedFilter === 'prepared') return !!it.prepared;
+    if (preparedFilter === 'not') return !it.prepared;
+    return true;
+  });
+
+  // A3: Import check findings — computed on every render, never stored.
+  // findingsByRowId: Map<id, Finding[]> — used for per-row badges and the "To review" filter.
+  const allFindings = checkBomRows(items);
+  const findingsByRowId = new Map();
+  for (const f of allFindings) {
+    if (!findingsByRowId.has(f.rowId)) findingsByRowId.set(f.rowId, []);
+    findingsByRowId.get(f.rowId).push(f);
+  }
+  // "To review": flagged rows that are not yet verified this session.
+  // A row leaves "To review" once purchaseQty is locked AND R1 passes (or it's verified).
+  const isToReview = (item) => {
+    if (verifiedIds.has(item.id)) return false;
+    const rowFindings = findingsByRowId.get(item.id);
+    if (!rowFindings || rowFindings.length === 0) return false;
+    // If purchaseQty is locked and R1 is no longer triggered, it's cleared.
+    const locked = Array.isArray(item.lockedFields) ? item.lockedFields : [];
+    if (locked.includes('purchaseQty')) {
+      const r1 = rowFindings.some((f) => f.rule === 'R1');
+      if (!r1) return false;
+    }
+    return true;
+  };
+  const reviewCount = items.filter(isToReview).length;
+
+  // Apply importCheckFilter on top of preparedFiltered (composable).
+  const checkFiltered = importCheckFilter
+    ? preparedFiltered.filter((it) => isToReview(it))
+    : preparedFiltered;
   const supplierById = new Map(suppliers.map((s) => [s.id, s]));
 
   // Grouping: Unassigned first (null assignment OR dangling supplier id),
@@ -120,7 +179,7 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
   const buildGroups = () => {
     const unassigned = [];
     const bySup = new Map();
-    for (const item of ordered) {
+    for (const item of checkFiltered) {
       const s = item.assignedSupplierId ? supplierById.get(item.assignedSupplierId) : null;
       if (!s) unassigned.push(item);
       else {
@@ -198,6 +257,163 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
     await reload();
   };
 
+  const toggleFromStock = async (item) => {
+    const currentFromStock = !!item.fromStock;
+    const k = itemKey(item.item, item.spec);
+    const qty = Number(item.purchaseQty ?? 0);
+
+    if (!currentFromStock) {
+      if (!qty || qty <= 0) {
+        setNotice(`Can't mark "${item.item}" from stock — purchaseQty is empty.`);
+        return;
+      }
+      const balance = await getPredictedBalance(k);
+      // null balance means startingCount unset — still allow, but warn.
+      if (balance !== null && balance < qty) {
+        const goAhead = window.confirm(
+          `Stock balance for "${item.item}" is ${balance} but you need ${qty}. Mark anyway?`
+        );
+        if (!goAhead) return;
+      }
+      // Write the used movement and capture its id + qty so untick can reverse EXACTLY that.
+      const movement = await writeUsedMovement(k, qty, projectId);
+      const stockItems = await listStockItems();
+      const tracked = stockItems.find((s) => s.itemKey === k);
+      const movementNote = tracked
+        ? `Used ${qty} ${item.unit || ''} from stock. Balance was: ${balance}`
+        : `Used ${qty} ${item.unit || ''} from stock (item not yet tracked — add it to Stock for accurate balances).`;
+      await bomRepo.updateBomItem(item.id, { fromStock: true, stockMovementId: movement.id });
+      await appendChangeLog({
+        projectId,
+        actor: 'supervisor',
+        field: `${item.item} :: from_stock`,
+        oldValue: null,
+        newValue: movementNote,
+      });
+      setNotice(`Marked "${item.item}" as prepared from workshop stock.`);
+    } else {
+      // Reverse the EXACT quantity written, by looking up the original movement.
+      // This is not the current purchaseQty — it's what was actually deducted.
+      let reversedQty = qty;
+      if (item.stockMovementId) {
+        const original = await getStockMovement(item.stockMovementId);
+        if (original) reversedQty = Number(original.quantity ?? 0);
+      }
+      await writeReversalMovement({
+        itemKeyVal: k,
+        reversesId: item.stockMovementId || `untick-${Date.now()}`,
+        reversesType: 'used',
+        quantity: reversedQty,
+        actor: 'supervisor',
+        note: `Reversed stock usage: un-ticked "from stock" on BOM. Project: ${projectId}. Quantity: ${reversedQty}.`,
+      });
+      await bomRepo.updateBomItem(item.id, { fromStock: false, stockMovementId: null });
+      await appendChangeLog({
+        projectId,
+        actor: 'supervisor',
+        field: `${item.item} :: from_stock_reversed`,
+        oldValue: null,
+        newValue: `Reversed ${reversedQty} ${item.unit || ''} back to stock.`,
+      });
+      setNotice(`Removed "${item.item}" from stock use — balance restored.`);
+    }
+    await reload();
+  };
+
+  const toggleDoubtful = async (item) => {
+    const next = !item.doubtful;
+    await bomRepo.updateBomItem(item.id, { doubtful: next });
+    await appendChangeLog({
+      projectId,
+      actor: 'supervisor',
+      field: `${item.item} :: doubtful`,
+      oldValue: String(!!item.doubtful),
+      newValue: String(next),
+    });
+    setNotice(next
+      ? `"${item.item}" marked doubtful — visually flagged.`
+      : `"${item.item}" cleared of doubtful flag.`);
+    await reload();
+  };
+
+  // BOM checklist (BOM_CHECKLIST_MODE_SPEC): preparation tracking, separate from fromStock.
+  // Prepared = delivery readiness only; does NOT touch stock (that's fromStock's job).
+  const togglePrepared = async (item) => {
+    const next = !item.prepared;
+    await bomRepo.updateBomItem(item.id, { prepared: next });
+    await appendChangeLog({
+      projectId,
+      actor: 'supervisor',
+      field: `${item.item} :: prepared`,
+      oldValue: String(!!item.prepared),
+      newValue: String(next),
+    });
+    setNotice(next ? `"${item.item}" marked prepared.` : `"${item.item}" unmarked prepared.`);
+    await reload();
+  };
+
+  const updatePreparedNote = async (item, note) => {
+    await bomRepo.updateBomItem(item.id, { preparedNote: note });
+    await reload();
+  };
+
+  /**
+   * A4 — "Verified" tap on a flagged import-check row.
+   * Locks purchaseQty through the standard supervisor-edit path (same as manual
+   * edits: lock + ChangeLogEntry). Also locks unitCost if it is numeric.
+   * Writes a human diary sentence — no raw field names leak to the screen.
+   * Removes the row from "To review" in the local UI state immediately.
+   */
+  const verifyRow = async (item) => {
+    try {
+      await bomRepo.lockField(item.id, 'purchaseQty');
+      if (typeof item.unitCost === 'number' && Number.isFinite(item.unitCost)) {
+        await bomRepo.lockField(item.id, 'unitCost');
+      }
+      const qty = item.purchaseQty;
+      await appendChangeLog({
+        projectId,
+        actor: 'supervisor',
+        field: 'verified:purchaseQty',
+        oldValue: qty,
+        newValue: qty,
+        itemName: item.item,
+      });
+      setVerifiedIds((prev) => new Set([...prev, item.id]));
+      setNotice(`Verified quantity ${qty ?? '(unset)'} for "${item.item}".`);
+      await reload();
+    } catch (err) {
+      setNotice(`Verify failed: ${err.message}`);
+    }
+  };
+
+  // Received control (Task 2): delivery tracking only, does NOT touch stock yet.
+  // receivedQty is cumulative, never below 0.
+  const handleReceivedQty = async (item, nextQty) => {
+    const clamped = Math.max(0, Number(nextQty) || 0);
+    const old = typeof item.receivedQty === 'number' ? item.receivedQty : 0;
+    if (clamped === old) return;
+    await bomRepo.updateBomItem(item.id, { receivedQty: clamped });
+    await appendChangeLog({
+      projectId,
+      actor: 'supervisor',
+      field: `${item.item} :: received_qty`,
+      oldValue: String(old),
+      newValue: String(clamped),
+    });
+    setNotice(`"${item.item}" received qty: ${clamped} ${item.unit || ''}.`);
+    await reload();
+  };
+
+  const markReceivedInFull = async (item) => {
+    const full = Number(item.purchaseQty ?? 0);
+    if (!full) {
+      setNotice(`Can't mark "${item.item}" received in full — purchaseQty is empty.`);
+      return;
+    }
+    await handleReceivedQty(item, full);
+  };
+
   const exportBom = async () => {
     if (exporting) return;
     setExporting(true);
@@ -211,12 +427,14 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
       const lines = buildBomExportLines(rows);
       const importNotes = log.filter((c) => c.field === 'import_note');
       const lastImport = importNotes.length > 0 ? importNotes[importNotes.length - 1] : null;
+      const openConfirmCount = Array.isArray(openConfirms) ? openConfirms.length : 0;
       const data = buildBomExportData({
         project,
         quotationDate: lastImport ? formatShortDate(lastImport.timestamp) : '—',
         source: 'Agent 6/7 Reconciliation Pipeline',
         generatedAt: new Date().toISOString(),
         lines,
+        openConfirmCount,
       });
       const bytes = renderBomExportPdf(data);
       const blob = new Blob([bytes], { type: 'application/pdf' });
@@ -288,18 +506,45 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
 
   const renderRow = (item, no) => {
     const locked = Array.isArray(item.lockedFields) ? item.lockedFields : [];
+    const rowTintClass = item.doubtful ? 'doubtful-row' : '';
+    const fromStockBadge = item.fromStock ? (
+      <span className="badge" style={{ background: '#dcfce7', color: '#166534', marginLeft: '0.5rem' }}>
+        📦 From stock
+      </span>
+    ) : null;
+    const doubtfulBadge = item.doubtful ? (
+      <span className="badge" style={{ background: '#fee2e2', color: '#991b1b', marginLeft: '0.5rem' }}>
+        ⚠️ Doubtful
+      </span>
+    ) : null;
+    // A3: Import check badge — "Check" word + reason text; colour is never the only signal.
+    const rowFindings = findingsByRowId.get(item.id) || [];
+    const needsReview = isToReview(item);
+    const checkBadge = needsReview ? (
+      <span
+        className="badge"
+        style={{ background: '#fef9c3', color: '#713f12', marginLeft: '0.5rem' }}
+        aria-label="Import check flag"
+      >
+        Check
+      </span>
+    ) : null;
     return (
       <div
         key={item.id}
-        className="row"
+        className={`row ${rowTintClass}`}
         draggable
         onDragStart={() => setDragId(item.id)}
         onDragOver={(e) => e.preventDefault()}
         onDrop={() => onDropOn(item.id)}
+        style={item.doubtful ? { borderLeft: '4px solid #ef4444', paddingLeft: '0.5rem' } : {}}
       >
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
           <span className="badge" aria-label={`Position ${no}`}>{no}</span>
                 <strong>{item.item}</strong>{' '}
+                {fromStockBadge}
+                {doubtfulBadge}
+                {checkBadge}
                 {locked.length > 0 && (
                   <span className="badge locked">🔒 {locked.join(', ')}</span>
                 )}
@@ -359,12 +604,155 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
             <div className="money"><strong>{formatCurrency(item.estTotal)}</strong></div>
           </div>
         </div>
+        <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+          <label
+            className="small"
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'center',
+              cursor: 'pointer',
+              padding: '0.25rem 0.5rem',
+              borderRadius: '0.375rem',
+              background: item.fromStock ? '#f0fdf4' : 'transparent',
+            }}
+            title="Check this if item was drawn from workshop stock instead of being purchased"
+          >
+            <input
+              type="checkbox"
+              checked={!!item.fromStock}
+              onChange={() => toggleFromStock(item)}
+            />
+            Prepared from workshop stock
+          </label>
+          <label
+            className="small"
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'center',
+              cursor: 'pointer',
+              padding: '0.25rem 0.5rem',
+              borderRadius: '0.375rem',
+              background: item.doubtful ? '#fef2f2' : 'transparent',
+            }}
+            title="Flag this row's imported value as suspect / needing review"
+          >
+            <input
+              type="checkbox"
+              checked={!!item.doubtful}
+              onChange={() => toggleDoubtful(item)}
+            />
+            Doubtful (needs review)
+          </label>
+          <label
+            className="small"
+            style={{
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'center',
+              cursor: 'pointer',
+              padding: '0.25rem 0.5rem',
+              borderRadius: '0.375rem',
+              background: item.prepared ? 'var(--saved, #f0fdf4)' : 'transparent',
+              minHeight: '48px',
+            }}
+            title="Mark this item as prepared (delivery readiness; does not touch stock)"
+          >
+            <input
+              type="checkbox"
+              checked={!!item.prepared}
+              onChange={() => togglePrepared(item)}
+              style={{ width: '20px', height: '20px' }}
+            />
+            Prepared
+          </label>
+        </div>
+        <div
+          style={{
+            marginTop: '0.5rem',
+            padding: '0.5rem',
+            background: item.prepared ? 'var(--saved, #f0fdf4)' : 'transparent',
+            borderRadius: '0.375rem',
+          }}
+        >
+          <label className="small" style={{ color: 'var(--text-muted)' }}>
+            Preparation note
+            <input
+              type="text"
+              value={item.preparedNote || ''}
+              onChange={(e) => updatePreparedNote(item, e.target.value)}
+              style={{ width: '100%', marginTop: '0.25rem' }}
+              placeholder="e.g. Picked, packed, delivered to site"
+            />
+          </label>
+        </div>
+        <div
+          style={{
+            marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}
+        >
+          <span className="small" style={{ color: 'var(--text-muted)' }}>
+          Received: {typeof item.receivedQty === 'number' ? item.receivedQty : 0} {item.unit || ''}
+          {item.purchaseQty && (typeof item.receivedQty === 'number') && item.receivedQty < item.purchaseQty
+            ? ` (${item.purchaseQty - item.receivedQty} pending)`
+            : ''}
+          {item.purchaseQty && (typeof item.receivedQty === 'number') && item.receivedQty > item.purchaseQty
+            ? ' (over-received — check!)'
+            : ''}
+          </span>
+          <button
+            className="secondary"
+            style={{ minWidth: '48px', padding: '0.25rem 0.5rem' }}
+            onClick={() => markReceivedInFull(item)}
+          >
+            Received in full
+          </button>
+          <input
+            type="number"
+            min={0}
+            style={{ width: '80px' }}
+            placeholder="Qty"
+            defaultValue={typeof item.receivedQty === 'number' ? item.receivedQty : 0}
+            onBlur={(e) => handleReceivedQty(item, e.target.value)}
+            aria-label={`Set received quantity for ${item.item}`}
+          />
+        </div>
         <SupplierPicker
           suppliers={suppliers}
           value={item.assignedSupplierId}
           itemName={item.item}
           onAssign={(supplierId, remember) => assignSupplier(item, supplierId, remember)}
         />
+        {/* A3: Import check detail — reason text for each flag + one-tap Verify (A4). */}
+        {needsReview && (
+          <div
+            style={{
+              marginTop: '0.5rem',
+              padding: '0.5rem',
+              background: '#fefce8',
+              borderRadius: '0.375rem',
+              borderLeft: '3px solid #ca8a04',
+            }}
+            role="status"
+            aria-label="Import check flags"
+          >
+            <div className="small" style={{ color: '#92400e', fontWeight: 600, marginBottom: '0.25rem' }}>
+              Check — import flags:
+            </div>
+            {rowFindings.map((f, i) => (
+              <div key={i} className="small" style={{ color: '#78350f', marginBottom: '0.125rem' }}>
+                {f.message}
+              </div>
+            ))}
+            <button
+              onClick={() => verifyRow(item)}
+              style={{ marginTop: '0.5rem', minHeight: '48px', padding: '0.25rem 0.75rem' }}
+              aria-label={`Verify quantity for ${item.item} and clear import check flag`}
+            >
+              Verified — looks correct
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -374,7 +762,7 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
   // flat list exactly (Ticket 5 invariant review).
   const buildCategoryGroups = () => {
     const byCat = new Map();
-    for (const item of ordered) {
+    for (const item of checkFiltered) {
       const cat = item.category || 'Uncategorised';
       if (!byCat.has(cat)) byCat.set(cat, []);
       byCat.get(cat).push(item);
@@ -388,11 +776,14 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
     ? buildGroups().map((g) => ({ ...g, kind: g.supplier ? 'supplier' : 'unassigned' }))
     : view === 'category'
       ? buildCategoryGroups()
-      : [{ id: '__all__', kind: 'flat', items: ordered }];
+      : [{ id: '__all__', kind: 'flat', items: checkFiltered }];
 
   return (
     <div className="container">
       <h1>BOM ({items.length})</h1>
+      <div className="small" style={{ color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+        {preparedCount} of {totalCount} prepared
+      </div>
       <div style={{ display: 'flex', gap: '0.5rem', margin: '0.5rem 0', flexWrap: 'wrap' }}>
         <button onClick={exportBom} disabled={exporting}>
           {exporting ? 'Exporting…' : 'Export BOM'}
@@ -415,6 +806,60 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
           All
         </button>
       </div>
+      <div style={{ display: 'flex', gap: '0.5rem', margin: '0.25rem 0 0.5rem', flexWrap: 'wrap' }}>
+        <span className="small" style={{ color: 'var(--text-muted)', alignSelf: 'center' }}>Prepared:</span>
+        <button
+          className="secondary"
+          onClick={() => setPreparedFilter('all')}
+          aria-pressed={preparedFilter === 'all'}
+        >
+          All status
+        </button>
+        <button
+          className="secondary"
+          onClick={() => setPreparedFilter('not')}
+          aria-pressed={preparedFilter === 'not'}
+        >
+          Not yet prepared
+        </button>
+        <button
+          className="secondary"
+          onClick={() => setPreparedFilter('prepared')}
+          aria-pressed={preparedFilter === 'prepared'}
+        >
+          Prepared
+        </button>
+      </div>
+      {/* A3: Import check banner — non-blocking, links to "To review" filter. */}
+      {allFindings.length === 0 && items.length > 0 && (
+        <div className="small" style={{ color: 'var(--text-muted)', margin: '0.25rem 0 0.5rem' }}>
+          Import check: No automatic flags. This does not check your drawings.
+        </div>
+      )}
+      {reviewCount > 0 && (
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', margin: '0.25rem 0 0.5rem', flexWrap: 'wrap' }}>
+          <span className="small" style={{ color: 'var(--text-muted)', alignSelf: 'center' }}>
+            Import check: {reviewCount} {reviewCount === 1 ? 'line' : 'lines'} to review
+          </span>
+          <button
+            className={importCheckFilter ? '' : 'secondary'}
+            style={{ fontSize: '0.75rem', padding: '0.25rem 0.75rem', minHeight: '48px' }}
+            aria-pressed={importCheckFilter}
+            onClick={() => setImportCheckFilter((v) => !v)}
+          >
+            {importCheckFilter ? `To review (${reviewCount}) ✓` : `To review (${reviewCount})`}
+          </button>
+          {importCheckFilter && (
+            <button
+              className="secondary"
+              style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', minHeight: '48px' }}
+              onClick={() => setImportCheckFilter(false)}
+            >
+              Show all
+            </button>
+          )}
+        </div>
+      )}
       {notice && <div className="card" role="status" style={{ margin: '0.5rem 0' }}>{notice}</div>}
       {items.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No items yet.</p>}
 
@@ -485,6 +930,11 @@ export default function BomScreen({ projectId, onGoSuppliers, onAddItem }) {
               {orderCtx.excluded.length > 0 &&
                 ` · ${orderCtx.excluded.length} items pending confirmation — excluded from this order.`}
             </p>
+            {!orderCtx.supplier.verifiedDate && (
+              <div className="small" style={{ color: '#b45309', background: '#fef3c7', padding: '0.25rem 0.5rem', borderRadius: '0.25rem', marginBottom: '0.5rem' }}>
+                ⚠️ Number not verified
+              </div>
+            )}
             <pre style={{ whiteSpace: 'pre-wrap', background: 'var(--bg)', padding: '0.75rem', borderRadius: '0.5rem', fontSize: '0.875rem' }}>
               {orderMessage()}
             </pre>

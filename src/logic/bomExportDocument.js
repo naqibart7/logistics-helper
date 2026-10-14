@@ -59,8 +59,10 @@ export const buildBomExportTotals = (lines) => {
 /**
  * Assemble everything the PDF needs. clientLine is '—' when unset (graceful
  * blank); quotationDate/source are caller-provided (unknown → honest defaults).
+ * openConfirmCount: when >0, the PDF shows a caveat line that the BOM may be
+ * incomplete (items pending confirmation still unresolved).
  */
-export const buildBomExportData = ({ project, quotationDate, source, generatedAt, lines }) => {
+export const buildBomExportData = ({ project, quotationDate, source, generatedAt, lines, openConfirmCount }) => {
   const rollup = buildCategoryRollup(lines);
   const { grandTotal, itemCount, tbdCount } = buildBomExportTotals(lines);
   return {
@@ -76,6 +78,7 @@ export const buildBomExportData = ({ project, quotationDate, source, generatedAt
     grandTotal,
     itemCount,
     tbdCount,
+    openConfirmCount: typeof openConfirmCount === 'number' ? openConfirmCount : 0,
   };
 };
 
@@ -109,6 +112,13 @@ export const renderBomExportPdf = (data) => {
     checkPageBreak(step);
     y += step;
   };
+
+  if (data.openConfirmCount > 0) {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'italic');
+    doc.text(`${data.openConfirmCount} item(s) pending confirmation — this BOM may be incomplete.`, 14, y);
+    y += 7;
+  }
 
   // Header Block
   doc.setFontSize(16);

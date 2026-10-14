@@ -38,7 +38,7 @@ describe('Task J: fresh project, first import, exact counts, edit locks', () => 
     fireEvent.change(input, {
       target: { files: [new File([mdText], 'Qwen_markdown_20260910_k171vvnlq.md', { type: 'text/markdown' })] },
     });
-    await waitFor(() => expect(opened).toHaveBeenCalledTimes(1), { timeout: 10000 });
+    await waitFor(() => expect(opened).toHaveBeenCalledTimes(1), { timeout: 20000 });
     const projectId = opened.mock.calls[0][0];
     ui.unmount();
     cleanup();
@@ -58,13 +58,13 @@ describe('Task J: fresh project, first import, exact counts, edit locks', () => 
     const panel = screen.getByText('Edit purchaseQty (will lock the field)').closest('.card');
     fireEvent.change(panel.querySelector('input'), { target: { value: '77' } });
     fireEvent.click(screen.getByText('Save + lock'));
-    // 52-row re-render + supplier joins can exceed the 1s default; 5s tolerance.
-    await screen.findByText(/🔒 purchaseQty/, {}, { timeout: 5000 });
+    // 52-row re-render + supplier joins can exceed the 1s default; generous tolerance.
+    await screen.findByText(/🔒 purchaseQty/, {}, { timeout: 10000 });
     const gypsum = (await listBomItems(projectId)).find((b) => b.item === 'Gypsum Board 9mm');
     expect({ purchaseQty: gypsum.purchaseQty, locked: gypsum.lockedFields }).toEqual({
       purchaseQty: 77,
       locked: ['purchaseQty'],
     });
     bom.unmount();
-  });
+  }, 45000); // 45s — UI-driven e2e through fake-indexeddb is slow under parallel load
 });

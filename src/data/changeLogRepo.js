@@ -5,7 +5,7 @@
 import db from './db.js';
 import { generateId } from '../utils/helpers.js';
 
-export const appendChangeLog = async ({ projectId, actor, field, oldValue = null, newValue = null }) => {
+export const appendChangeLog = async ({ projectId, actor, field, oldValue = null, newValue = null, ...rest }) => {
   if (actor !== 'agent' && actor !== 'supervisor') {
     throw new Error(`Invalid ChangeLog actor: ${actor}`);
   }
@@ -17,6 +17,7 @@ export const appendChangeLog = async ({ projectId, actor, field, oldValue = null
     field,
     oldValue: oldValue ?? null,
     newValue: newValue ?? null,
+    ...rest,
   };
   await db.changeLog.add(row);
   return row;

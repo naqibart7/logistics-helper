@@ -76,8 +76,11 @@ export default function ProjectsScreen({ onOpenProject }) {
     }
     setConfirmDeleteId(null);
     await deleteProject(id);
+    // Optimistic + consistent: first filter the in-memory list, then re-read from Dexie.
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    const fromDb = await listProjects();
+    setProjects(fromDb);
     setStatus(`Deleted "${name}" and its project data. Shared suppliers kept.`);
-    await reload();
   };
 
   const handleFile = async (file) => {

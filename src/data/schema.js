@@ -83,6 +83,24 @@ export const defaultBomItem = (partial = {}) => ({
   source: partial.source === 'manual' || partial.source === 'import' ? partial.source : null,
   reasonTag: MANUAL_REASON_TAGS.includes(partial.reasonTag) ? partial.reasonTag : null,
   addedAt: typeof partial.addedAt === 'string' ? partial.addedAt : null,
+  // Lane 3 (Stock Module): checklist + reconciliation fields.
+  // fromStock: user ticked "prepared from workshop stock" → auto writes a stock "used" movement.
+  fromStock: partial.fromStock === true ? true : false,
+  // stockMovementId: links fromStock=true to the stock ledger "used" movement, so unticking reverses it.
+  stockMovementId: typeof partial.stockMovementId === 'string' ? partial.stockMovementId : null,
+  // doubtful: visual-only flag on this BOM row (supervisor marked the imported value suspect).
+  // It does NOT change quick-order eligibility (Annex E rule restored: Annex E is driven by
+  // Confirm refs only). This flag is unrelated to the stock "doubtful" state used by the
+  // weekly quick-check — they share the word but are different fields.
+  doubtful: partial.doubtful === true ? true : false,
+  // receivedQty: actual physical quantity received against this line (PO → Stock "received" auto-touchpoint).
+  receivedQty: typeof partial.receivedQty === 'number' && !Number.isNaN(partial.receivedQty) ? partial.receivedQty : null,
+  // BOM checklist (BOM_CHECKLIST_MODE_SPEC): preparation tracking, separate from fromStock.
+  // prepared: supervisor ticked "this item is prepared" — delivery readiness only.
+  // preparedNote: free-text note on preparation state. Both are invisible to mergeEngine
+  // (not in MERGE_FIELDS), exactly like displayOrder. Ticking writes a ChangeLogEntry.
+  prepared: partial.prepared === true ? true : false,
+  preparedNote: typeof partial.preparedNote === 'string' ? partial.preparedNote : null,
 });
 
 /** Fresh defaults for a new ShortageConfirmItem row. */
