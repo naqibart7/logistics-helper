@@ -30,6 +30,7 @@ const TABS = [
   { id: 'confirm', label: 'Confirm', short: 'Cfm' },
   { id: 'suppliers', label: 'Suppliers', short: 'Supp' },
   { id: 'po', label: 'PO', short: 'PO' },
+  { id: 'stock', label: 'Stock', short: 'Stock' },
 ];
 
 const manualAddDeps = {
@@ -157,6 +158,7 @@ export default function App() {
       {tab === 'confirm' && <ConfirmScreen projectId={projectId} onChanged={() => refreshGate(projectId)} />}
       {tab === 'suppliers' && <SuppliersScreen projectId={projectId} />}
       {tab === 'po' && <PoScreen projectId={projectId} onGoConfirm={() => setTab('confirm')} />}
+      {tab === 'stock' && <StockScreen projectId={projectId} />}
 
       {/* Lane 2: visible sync state — reports, never blocks. Fixed above the tab bar. */}
       <div
