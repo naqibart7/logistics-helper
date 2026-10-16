@@ -24,7 +24,8 @@ def load_daily(date_iso):
     """Load today's record, or a fresh empty one (with both chunk keys present)."""
     path = _daily_path(date_iso)
     if path.exists():
-        with path.open("r", encoding="utf-8") as f:
+        # utf-8-sig: a BOM (Windows editors add one) would break json.load().
+        with path.open("r", encoding="utf-8-sig") as f:
             record = json.load(f)
     else:
         record = {"date": date_iso, "chunks": {}, "deliveryActivity": {"doneToday": [], "readyToDeliver": []}}

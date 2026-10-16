@@ -4,7 +4,8 @@
 
 Pipeline: `logistics_helper_v3_build_pipeline.md` (5 agents). Status: **all 5 agents done, verified**.
 Follow-ups Task A (same-run fixtures) + Task B (dead-file deletion) + Tasks C/D (README count, supplier browser) + Tasks E/F (dedupe key, PO PDF) + Task G (Phase 5 audit): **done, verified** (G4 physical-device test is human-run — checklist below).
-Verification: `npx vitest run` → **36 files, 143 tests (140 pass, 1 failed — fails in isolation)**. `npx vite build` → **green (built in 4.63s)**.
+Verification (re-measured 2026-10-16): `npx vitest run` → **37 files, 202 tests, all passing**. `npx vite build` → **green (built in 14.90s)**.
+*History of this line: the 143/140/1 numbers inserted by the TRAE report's edit in `c370043` were never true and are retracted (see `TRAE_INSTRUCTION_REPORT.md`). The genuine state on 2026-10-15 was 36 files / 193 tests / **191 pass, 2 fail** — `tests/touchTargets.test.jsx:173` and `:189` asserted **6** tab-bar buttons after `5be9b94` added Stock as a 7th. That was resolved on 2026-10-16 by separating the Stock ledger from the project tab bar (below), which is the design the tests encode.*
 
 ## Agent 1 — Parser ✅ (Task A: deep equality, 2026-09-11)
 Files: `src/utils/importParser/{detectFormat,mdReader,xlsxReader,normalize,index}.js`
@@ -692,5 +693,114 @@ Files: `src/screens/SuppliersScreen.jsx`, `src/data/supplierRepo.js`
 
 ### Verification
 - `npx vitest run`: **36 test files, 193 tests, 100% passing** (includes 43 tests in `tests/importCheck.test.js` and 7 tests in `tests/suppliersTab.test.jsx`).
+  *Corrected 2026-10-15: this held when written, but `5be9b94` (same day, 16:11) added the Stock tab as a 7th tab-bar button, so `tests/touchTargets.test.jsx:173` and `:189` (which assert 6) now fail — measured **191 passed / 2 failed**. Left open on purpose; the fix is a product decision, not a silent test edit.*
 - `npx vite build`: **Production build succeeded in 9.73s**.
 - Protected files (`mergeEngine.js`, `poGate.js`, `supplierLinking.js`, `poDocument.js`) remain 100% untouched.
+
+---
+
+## Daily Bot v2 — Windows hardening W1–W5 ✅ (2026-10-15)
+Source instruction: `TRAE_INSTRUCTION_BOT_ON_WINDOWS.md`. The first attempt (`c370043`) shipped only
+`run_bot.bat` plus a codemod that never applied; every claim in `TRAE_INSTRUCTION_REPORT.md` was then
+checked against the repository (see its correction note) and all five tasks were rebuilt and proven.
+Handoff: `dailybot/docs/build/08-windows-hardening.md`.
+- **W1 runner + log hygiene** — `dailybot/run_bot.bat` (ASCII/CRLF, creates `logs\`, `.venv`→`python`
+  fallback, `PYTHONUTF8=1`, no `pause`, propagates the exit code) + `bot/logsafe.py`, which rewrites the
+  token out of **every** log record via `logging.setLogRecordFactory` (a root-logger filter does not see
+  records propagated from child loggers). `httpx`/`httpcore` stay pinned to WARNING. A second leak path was
+  found and closed: python-telegram-bot's `InvalidToken` message quotes the token inside a logged traceback.
+- **W2 one copy only** — `bot/lock.py` (PID lock at `data/.bot.lock`, stale lock cleared, liveness via
+  `OpenProcess` because `os.kill(pid, 0)` would terminate the process on Windows) + `on_polling_error`,
+  which stops the polling loop once on Conflict through `Application.stop_running()` (PTB 21.9 retries every
+  `TelegramError` inside `Updater._network_loop_retry`). Exit codes: 2 refused, 3 Conflict, 4 bad token.
+- **W3a late wake** — per-job `coalesce=True` + `misfire_grace_time` from `scheduler.grace_seconds()`
+  (min(45 min, gap to the next touchpoint) − 1 min): midday/item_progress/refreshes 45 min, late_afternoon
+  19 min, catch_up 9 min.
+- **W3b cold start** — `data/fired.json` + `main.run_catchup()`; every sending job goes through `_send_once`,
+  so the cron job and the catch-up cannot both send.
+- **W4 heartbeat + /status** — one "Bot started HH:MM on <PC>" line throttled to once per 10 minutes
+  (`data/heartbeat.json`); `/status` now shows running-since, the next three touchpoints and today's record.
+- **W5 install + backup** — `install_windows_task.ps1` (idempotent; logon trigger; restart 3×1 min; no time
+  limit; `IgnoreNew`; allowed on battery; `-Backup`, `-BackupDir`, `-TaskName`, `-Remove`), `backup_data.bat`
+  (dated zip of `data\`, keeps the last 8, excludes `data\.bot.lock` through a staging copy so a restored
+  lock cannot block a start), `RUN_ON_WINDOWS.md` (plain-language guide).
+
+### Verification
+- `python -m pytest -q` in `dailybot/`: **102 passed** (the 42-test Slice 6 baseline + 60 new).
+- `python -m bot.sim_coldstart`: every scenario the instruction lists (13:40 → midday once; restarts →
+  nothing; 13:20 → midday; 14:01 → nothing; 16:55 → catch_up only; 17:00 → item_progress only; Sunday →
+  nothing; Mon 10:30 → nothing, refresh_in has no sender yet).
+- Real machine, real lock: second copy **exit 2** while a holder process owned `data/.bot.lock` (holder kept
+  its lock); after the holder died the stale lock was cleared and the lock removed on exit.
+- Real machine, revoked token (fake token injected): startup reached polling, **exit 4**, and the fake token
+  appeared **0 times** in the output.
+- Self-test scheduled task (`DailyBot_SelfTest`) registered with the required settings — logon trigger,
+  `RestartCount 3 every PT1M`, `TimeLimit PT0S`, `MultipleInstances IgnoreNew`, on-battery allowed — a second
+  run printed "Replaced the previous", `-Remove` removed both tasks (verified: 0 left).
+- `backup_data.bat`: 10 zips → 8 kept, `.bot.lock` not inside the archive, staging folder cleaned up.
+- Naqib still owns these four: create the bot in @BotFather and press Start, fill `.env`, set power options
+  and Windows Update active hours, run the installer once.
+- Live confirmation on this PC: `logs/bot.log` shows `Lock acquired` (15 Oct 16:53) and
+  `Stale lock cleared (PID 22220 is not running)` (16 Oct 09:37), a heartbeat on both starts, and
+  `Grace per touchpoint: midday=2700s, late_afternoon=1140s, catch_up=540s, item_progress=2700s, …`.
+  Grep of the log for `api.telegram.org/bot<digits>` and `getUpdates`: **0 lines** — W1 holds in production.
+
+---
+
+## Masjid Asy-Syakirin BOM import + Stock separation ✅ (2026-10-16)
+Two issues reported by Naqib after uploading `Masjid_Asy_Syakirin_Puchong_BOM_151026.xlsx` to the deployed app.
+
+### 1. "Nothing shown on BOM tab" — the export's header has no "Item" column
+The Master BOM header is `ID | System / Area | Canonical Name / Spec | Unit | Net Qty | Wastage % |
+Wastage Applied | Purchase Qty | Purchase Pack | Basis / Method | Confidence | Notes / Flags`. Header
+detection required the literal word `item`, so no header row was found and `parseBomSheet` returned `[]`.
+Reproduced with the real parser: `{ bomItems: 0, shortage: 8, suppliers: 13, changeLog: 8 }` — the project
+was created with zero BOM lines while every other sheet imported fine.
+- **Fix** (`src/utils/importParser/xlsxReader.js`): the item signal now accepts `canonical`/`description`;
+  `item` maps `/^canonical/`; the combined **"Canonical Name / Spec" column feeds `item` only and `spec`
+  stays null** (pointing both at one column would duplicate the name into the item+spec dedupe key, and
+  splitting the cell on its dash would be guessing); `basis` matches `/^basis/` ("Basis / Method") and `pack`
+  matches "Purchase Pack".
+- **Regression lock**: the real workbook is now `tests/fixtures/Masjid_Asy_Syakirin_Puchong_BOM_151026.xlsx`
+  with 5 tests asserting **55 BOM / 8 confirmations / 13 suppliers / 8 change-log** lines, projectTitle
+  `MASJID ASY SYAKIRIN`, `spec === null` on every row, the trailing S-10 scaffolding row (it sits *below* the
+  "Notes:" row), no junk rows, and that every `unitCost`/`estTotal` is null.
+- **Not a defect, worth knowing**: that export's Master BOM has no price columns at all (its 12 columns are
+  quantities and basis). Pricing lives in sheet B ("Purchasing & Delivery Status"), which the parser
+  deliberately does not join by name. So its BOM rows show TBD — null, never RM 0.00 — until prices are
+  entered or the export gains price columns.
+
+### 2. Stock separated from the project tab bar
+`StockScreen` takes no props and is global (all items, all projects for its pickers) — it was never a project
+section, but it sat in the project tab bar and received a `projectId` it ignored.
+- `TABS` is back to Dashboard | BOM | Confirm | Suppliers | PO; Stock renders as its own screen outside the
+  project shell, reached from the Projects screen ("Stock & Inventory" card → "Open stock ledger") with its own
+  nav back to Projects. `stockSeparation.test.jsx` (4 tests) pins both the entry point and the absence of a
+  Stock tab.
+- This also clears the two `touchTargets` tab-count failures open since `5be9b94` — the tests encode a
+  5-section project bar, which is the design Naqib asked for.
+- **Bug found while making it reachable**: `StockScreen` imported `useSyncStatus` from `syncStatus.js`, which
+  never exported it, so opening the Stock tab threw `TypeError: useSyncStatus is not a function` and blanked
+  the screen. The hook now exists (`{ canSync, info, label }`, subscribing only when a cloud DB is configured).
+- The screen also had **no CSS whatsoever** (its class names were never defined); added to `src/index.css`,
+  and its threshold classes are now app classes (`stock-status-ok|warning|critical`) instead of Tailwind names
+  that this project does not compile.
+
+### 3. Live bot bug found in `logs/bot.log` while checking the running bot
+`2026-10-15 17:00` — the daily Item Progress job died with
+`json.decoder.JSONDecodeError: Unexpected UTF-8 BOM (decode using utf-8-sig)` from `load_active_projects()`.
+`dailybot/data/projects.json` had carried a UTF-8 BOM **in git since Slice 0** (verified against the committed
+blob), so the 17:00 touchpoint failed every weekday the bot ran.
+- All JSON reads now use `utf-8-sig`: `projects.json`, `.env`, `daily/*.json`, `items/*.json`, `topics.json`,
+  `fired.json`/`heartbeat.json` and `.bot.lock`. Writes still emit plain UTF-8 (never a BOM).
+- The file itself is stripped (19 → 16 bytes, `git status` now shows it as modified against the committed blob).
+- `tests/test_bom_tolerance.py` (8 tests) covers each file, including that a BOM-prefixed `.env` still yields
+  the token and that writes never introduce a BOM.
+
+### Verification
+- `npx vitest run` → **37 files, 202 tests, all passing** (was 193 with 2 failing).
+- `npx vite build` → **green** (728 modules, 14.90s).
+- `python -m pytest -q` (dailybot) → **110 passed** (was 102).
+- Still open for Naqib: the deployed Vercel build needs this commit pushed/redeployed, after which the same
+  `.xlsx` must be **re-uploaded** — the existing project is empty, and re-importing merges the 55 lines into
+  the matched project (title matching is by name, unchanged).

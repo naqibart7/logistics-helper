@@ -17,7 +17,9 @@ def load_items(project_id):
     """Load project's item list, or empty template if none yet."""
     path = _item_path(project_id)
     if path.exists():
-        with path.open("r", encoding="utf-8") as f:
+        # utf-8-sig: Naqib's Windows editors happily save these files with a
+        # byte-order mark, and json.load() rejects a BOM outright.
+        with path.open("r", encoding="utf-8-sig") as f:
             return json.load(f)
     return {"project": project_id, "completionPct": 0, "items": []}
 

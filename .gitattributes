@@ -1,0 +1,8 @@
+# Batch files must reach cmd.exe with CRLF endings. With a bare LF, a caret
+# line-continuation escapes the first character of the next line instead of
+# joining it: "…' dailybot_data_'…" became the command "aily" and looped
+# forever. See the maintainer note at the top of dailybot/backup_data.bat.
+*.bat text eol=crlf
+
+# PowerShell reads LF fine; keep the default (no rule) so the CRLF warnings
+# from core.autocrlf stay meaningful for the .ps1 scripts.

@@ -1,17 +1,23 @@
-```
 # Dependencies
 node_modules/
 
 # Build outputs
-dist/
-build/
-coverage/
+# Anchored on purpose: an unanchored `build/` also swallowed
+# dailybot/docs/build/ (the per-slice handoff record) at any depth.
+/dist/
+/build/
+/coverage/
 
 # Environment variables
 .env
 .env.local
 .env.*
 !.env.example
+
+# Local-only test data: one live project workbook (real supplier contacts) is
+# kept on this machine only. tests/parser.test.js skips those 5 tests when the
+# file is absent; the synthetic test for the same header shape always runs.
+/tests/fixtures/Masjid_Asy_Syakirin_Puchong_BOM_151026.xlsx
 
 # IDE files
 .vscode/
@@ -48,7 +54,8 @@ __pycache__/
 *.Z
 *.lz
 *.lzo
-```.next/
+
+.next/
 
 .vercel
 

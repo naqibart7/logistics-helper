@@ -2,6 +2,13 @@
 main.py — Slice 5: weekly compile (Groq + .docx) added alongside the item
 tracker, both chunk flows, catch-up ping, and free-text matching.
 
+Windows hardening (W1–W5, TRAE_INSTRUCTION_BOT_ON_WINDOWS.md) is layered on top:
+log hygiene (the Telegram URL contains the token, so httpx/httpcore stay at
+WARNING), a single-copy PID lock plus a one-shot exit on a polling Conflict, a
+misfire grace per touchpoint so a sleeping PC still asks, a fired.json catch-up
+on cold start, and a throttled "Bot started" heartbeat with /status showing the
+next three touchpoints.
+
 Env (from dailybot/.env, never committed): TELEGRAM_BOT_TOKEN, NAQIB_CHAT_ID,
 GROQ_API_KEY (+ LLM_PROVIDER / LLM_MODEL).
 V2_TEST_SEND=1 -> also fire the midday question once at startup (proof mode).
@@ -9,21 +16,41 @@ V2_TEST_SEND=1 -> also fire the midday question once at startup (proof mode).
 Run from dailybot/:  python -m bot.main
 """
 
+import atexit
 import logging
 import os
 import json
+import platform
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from telegram import Update
+from telegram.error import Conflict, InvalidToken
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 
 from bot import config
 from bot.chunks import CHUNKS, topics_for_chunk
 from bot.conversation import pending_for_chunk, catchup_leftovers, match_free_text
-from bot.scheduler import TOUCHPOINTS, label_for
+from bot.lock import acquire_lock, release_lock
+from bot.logsafe import install_token_redaction
+from bot.scheduler import (
+    TOUCHPOINTS,
+    catch_up_touchpoints,
+    format_when,
+    grace_seconds,
+    label_for,
+    next_touchpoints,
+)
+from bot.state import (
+    HEARTBEAT_INTERVAL_MINUTES,
+    is_fired,
+    load_fired,
+    mark_fired,
+    record_heartbeat,
+    should_send_heartbeat,
+)
 from bot.store import load_daily, save_daily, record_answer, now_kl_time
 from bot.topics import load_topics
 from bot.items import load_items, save_items, format_item_list, apply_item_changes, icon_for
@@ -32,7 +59,26 @@ from bot.weekly import generate_weekly_report, days_with_data, load_activities_b
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("dailybot")
 
+# W1 — httpx logs every request URL at INFO, and the Telegram URL is
+# https://api.telegram.org/bot<TOKEN>/getUpdates. These two lines are the whole
+# difference between a clean log and a leaked token; tests/test_log_hygiene.py
+# fails if either is removed. The redaction filter below covers the other leak
+# path (python-telegram-bot's own error messages quote the token).
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 KL = ZoneInfo(config.TIMEZONE)
+
+# Exit codes — distinct so logs\bot.log says which thing happened.
+CONFLICT_EXIT_CODE = 3    # another poller owns this token
+LOCKED_EXIT_CODE = 2      # another copy of the bot is already running
+TOKEN_EXIT_CODE = 4       # Telegram rejected the token
+
+# /status (W4). Set when the scheduler arms.
+RUNNING_SINCE = {"at": None}
+
+# Set by the polling error handler; read by run_bot's return value.
+POLLING_STATE = {"conflict": False}
 
 # One pending question at a time (chunks / free-text).
 PENDING = {"chunk": None, "topic": None}
@@ -48,7 +94,10 @@ def load_active_projects():
     """Return list of project ids from projects.json (Mon/Fri refresh writes here)."""
     path = config.PROJECTS_FILE
     if path.exists():
-        with path.open("r", encoding="utf-8") as f:
+        # utf-8-sig: the committed projects.json carried a BOM, which made
+        # json.load() raise "Unexpected UTF-8 BOM" and killed the 17:00 Item
+        # Progress job (seen live 2026-10-15 17:00).
+        with path.open("r", encoding="utf-8-sig") as f:
             data = json.load(f)
         return data.get("projects", [])
     # Hardcoded fallback for Slice 4 proof — Architecture §5.2 says "start with ONE hardcoded project"
@@ -56,10 +105,14 @@ def load_active_projects():
 
 
 def load_env(path=".env"):
-    """Tiny .env loader — no python-dotenv dependency for two variables."""
+    """Tiny .env loader — no python-dotenv dependency for two variables.
+
+    utf-8-sig: a BOM on the first line would otherwise make the key
+    "\\ufeffTELEGRAM_BOT_TOKEN", and the bot would report a missing token.
+    """
     if not os.path.exists(path):
         return
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8-sig") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
@@ -236,10 +289,10 @@ async def cmd_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """W4 — running-since + the next three touchpoints + today's record."""
     if str(update.effective_chat.id) != os.environ.get("NAQIB_CHAT_ID"):
         return
-    record = load_daily(today_iso())
-    await update.message.reply_text(f"Rekod harini ({today_iso()}):\n{record}")
+    await update.message.reply_text(status_text())
 
 
 async def cmd_weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -358,6 +411,14 @@ def arm_scheduler(app, scheduler):
     Wire every TOUCHPOINT to a KL cron job. Slice 4: midday + late-afternoon
     chunks + catch-up send; item_progress (17:00) runs guided flow; refresh
     jobs stay log-only (Slice 5+). Schedule times come ONLY from scheduler.TOUCHPOINTS.
+
+    W3a: APScheduler's default misfire grace is one second, so a prompt due while
+    the PC slept was silently dropped. Every job now gets coalesce=True (a wake-up
+    produces one run, not one per missed firing) and the grace from
+    scheduler.grace_seconds() (min(45 min, gap to the next touchpoint that day)).
+
+    Every sending job also goes through _send_once, so a cold-start catch-up and
+    the cron job for the same touchpoint cannot both send it.
     """
     handlers = {
         "midday": on_midday_fire,
@@ -368,25 +429,158 @@ def arm_scheduler(app, scheduler):
     for tp in TOUCHPOINTS:
         hour, minute = tp["time"].split(":")
         day_of_week = ",".join(str(w) for w in tp["weekdays"])
+        trigger = CronTrigger(hour=int(hour), minute=int(minute), day_of_week=day_of_week, timezone=KL)
+        job_kwargs = {
+            "args": [app],
+            "name": tp["id"],
+            "coalesce": True,
+            "misfire_grace_time": grace_seconds(tp["id"]),
+        }
         if tp["id"] in handlers:
-            scheduler.add_job(
-                handlers[tp["id"]], CronTrigger(hour=int(hour), minute=int(minute), day_of_week=day_of_week, timezone=KL),
-                args=[app], name=tp["id"],
-            )
+            scheduler.add_job(_send_once(tp["id"], handlers[tp["id"]]), trigger, **job_kwargs)
         else:
             def log_only(label=tp["label"]):
                 log.info("%s WOULD FIRE NOW (conversation logic lands in a later slice)", label)
-            scheduler.add_job(
-                log_only, CronTrigger(hour=int(hour), minute=int(minute), day_of_week=day_of_week, timezone=KL),
-                name=tp["id"],
-            )
+            scheduler.add_job(log_only, trigger, name=tp["id"], coalesce=True,
+                              misfire_grace_time=grace_seconds(tp["id"]))
+
+
+# ── W3b: one send per touchpoint per day ───────────────────────────────────────
+
+def _send_once(touchpoint_id, handler):
+    """
+    Wrap a touchpoint handler so it sends at most once per day: if fired.json
+    already lists it, do nothing. Marked only after a successful send, so a
+    failed send is still retried by the next catch-up.
+    """
+    async def once(app):
+        today = today_iso()
+        if is_fired(today, touchpoint_id):
+            log.info("%s already sent today — skipping.", touchpoint_id)
+            return
+        await handler(app)
+        mark_fired(today, touchpoint_id)
+        log.info("%s marked fired for %s", touchpoint_id, today)
+    once.__name__ = f"once_{touchpoint_id}"
+    return once
+
+
+# Handlers a cold start can replay. refresh_in/refresh_out are log-only until
+# their conversation logic lands, so they are deliberately absent.
+CATCHUP_HANDLERS = {
+    "midday": on_midday_fire,
+    "late_afternoon": on_lateafternoon_fire,
+    "catch_up": on_catchup_fire,
+    "item_progress": on_itemprogress_fire,
+}
+
+
+async def run_catchup(app, now=None):
+    """
+    W3b — the PC was off or asleep when a prompt was due. Send each touchpoint
+    that has passed inside its grace window today and is not in fired.json yet,
+    oldest first. Returns the ids it sent.
+    """
+    now = now or datetime.now(KL)
+    today = now.strftime("%Y-%m-%d")
+    already = load_fired(today)
+    sent = []
+    for tp_id in catch_up_touchpoints(now):
+        if tp_id in already:
+            log.info("COLD START: %s already sent today — nothing to catch up.", tp_id)
+            continue
+        handler = CATCHUP_HANDLERS.get(tp_id)
+        if handler is None:
+            log.info("COLD START: %s has no sender yet — skipped.", tp_id)
+            continue
+        log.info("COLD START: %s was due earlier today and is inside its grace window — sending once.",
+                 label_for(tp_id))
+        await handler(app)
+        mark_fired(today, tp_id)
+        sent.append(tp_id)
+    if not sent:
+        log.info("COLD START: nothing owed (no touchpoint inside its grace window).")
+    return sent
+
+
+# ── W4: heartbeat + /status ────────────────────────────────────────────────────
+
+async def send_heartbeat(app, now=None):
+    """
+    One line to Naqib on start: "Bot started 08:02 on <PC name>". Throttled to
+    once per 10 minutes so a restart loop cannot spam him.
+    """
+    now = now or datetime.now(KL)
+    if not should_send_heartbeat(now):
+        log.info("Heartbeat throttled (one already sent within %d minutes).", HEARTBEAT_INTERVAL_MINUTES)
+        return False
+    text = f"Bot started {now.strftime('%H:%M')} on {platform.node()}"
+    await app.bot.send_message(chat_id=os.environ["NAQIB_CHAT_ID"], text=text)
+    record_heartbeat(now)
+    log.info("Heartbeat sent: %s", text)
+    return True
+
+
+def status_text(now=None, running_since=None):
+    """W4 — /status body: running-since, the next three touchpoints, today's record."""
+    now = now or datetime.now(KL)
+    since = RUNNING_SINCE["at"] if running_since is None else running_since
+    lines = ["🤖 Daily Bot v2"]
+    lines.append(f"Running since: {since.strftime('%Y-%m-%d %H:%M') if since else 'not started in this process'}")
+    lines.append("Next touchpoints:")
+    for when, tp in next_touchpoints(now, 3):
+        lines.append(f"- {format_when(when)} — {tp['label']}")
+    lines.append(f"Rekod harini ({today_iso()}):")
+    lines.append(str(load_daily(today_iso())))
+    return "\n".join(lines)
+
+
+# ── W2: one poller per token ───────────────────────────────────────────────────
+
+async def on_polling_error(update, context):
+    """
+    PTB catches every TelegramError during polling (including Conflict) inside
+    Updater._network_loop_retry and calls this back — the loop only ends when the
+    updater stops, so a Conflict must stop it or the bot retries forever. One
+    clear line, then stop; run_bot turns that into exit code 3.
+    """
+    error = context.error
+    if isinstance(error, Conflict):
+        if not POLLING_STATE["conflict"]:
+            POLLING_STATE["conflict"] = True
+            log.error("Conflict error: another poller on this token detected. Exiting.")
+        context.application.stop_running()
+        return
+    log.warning("Polling error (retrying): %s", error)
+
+
+def run_bot(app):
+    """
+    Run polling and return the process exit code. Two failures are expected on a
+    home PC and neither may become a retry loop:
+      Conflict     -> another poller owns this token (exit 3, decided by the
+                      error handler above, which stops the loop)
+      InvalidToken -> the .env token is wrong or was revoked (exit 4)
+    """
+    try:
+        app.run_polling()
+    except InvalidToken:
+        log.error("Telegram rejected the token in .env — put a fresh token there and start the bot again. Exiting.")
+        return TOKEN_EXIT_CODE
+    finally:
+        release_lock()
+    return CONFLICT_EXIT_CODE if POLLING_STATE["conflict"] else 0
 
 
 async def post_init(app):
+    RUNNING_SINCE["at"] = datetime.now(KL)
     scheduler = AsyncIOScheduler(timezone=KL)
     arm_scheduler(app, scheduler)
     scheduler.start()
     log.info("Scheduler armed: %s (KL)", ", ".join(f"{tp['id']} {tp['time']} {label_for(tp['id'])}" for tp in TOUCHPOINTS))
+    log.info("Grace per touchpoint: %s", ", ".join(f"{tp['id']}={grace_seconds(tp['id'])}s" for tp in TOUCHPOINTS))
+    await send_heartbeat(app)
+    await run_catchup(app)
     if os.environ.get("V2_TEST_SEND") == "1":
         log.info("V2_TEST_SEND=1 -> firing midday question once at startup")
         await send_midday_first_question(app)
@@ -397,13 +591,23 @@ def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         raise SystemExit("TELEGRAM_BOT_TOKEN missing — set it in dailybot/.env")
+    install_token_redaction(token)
+
+    allowed, message = acquire_lock()
+    if not allowed:
+        log.error(message)
+        raise SystemExit(LOCKED_EXIT_CODE)
+    log.info(message)
+    atexit.register(release_lock)
+
     app = Application.builder().token(token).post_init(post_init).build()
     app.add_handler(CommandHandler("test", cmd_test))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("weekly", cmd_weekly))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
+    app.add_error_handler(on_polling_error)
     log.info("Starting NAQIB Daily Bot v2 (Slice 5: + weekly compile) — polling, no inbound port")
-    app.run_polling()
+    raise SystemExit(run_bot(app))
 
 
 if __name__ == "__main__":

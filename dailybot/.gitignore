@@ -6,6 +6,12 @@ data/reports/*
 !data/items/.gitkeep
 !data/reports/.gitkeep
 
+# Windows-hardening runtime state (W2/W3b/W4) — per-machine scratch, not answers
+data/.bot.lock
+data/fired.json
+data/heartbeat.json
+backups/
+
 # Secrets
 .env
 
@@ -16,3 +22,5 @@ __pycache__/
 
 # Local run logs (may contain tokens in URLs - never commit)
 logs_*.txt
+logs/
+

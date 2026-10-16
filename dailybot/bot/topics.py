@@ -9,7 +9,9 @@ from bot import config
 
 def load_topics():
     """Return {topic_id: topic_dict}. Raises loudly if the file is missing/broken."""
-    with config.TOPICS_FILE.open("r", encoding="utf-8") as f:
+    # utf-8-sig tolerates a byte-order mark: topics.json is hand-edited on
+    # Windows, and a BOM would otherwise make json.load() fail on line 1.
+    with config.TOPICS_FILE.open("r", encoding="utf-8-sig") as f:
         data = json.load(f)
     topics = {}
     for t in data.get("topics", []):

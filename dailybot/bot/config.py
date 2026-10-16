@@ -23,6 +23,12 @@ ITEMS_DIR = DATA_DIR / "items"
 DAILY_DIR = DATA_DIR / "daily"
 REPORTS_DIR = DATA_DIR / "reports"
 
+# Windows hardening (W2/W3b/W4) — single-copy lock + restart-surviving runtime
+# state. All three are per-machine scratch files, never answers: see .gitignore.
+LOCK_FILE = DATA_DIR / ".bot.lock"
+FIRED_FILE = DATA_DIR / "fired.json"
+HEARTBEAT_FILE = DATA_DIR / "heartbeat.json"
+
 # ── LLM (weekly compile, Slice 5) ──────────────────────────────────────────────
 # Provider presets — override with LLM_BASE_URL / LLM_MODEL / LLM_API_KEY.
 # Default groq model `openai/gpt-oss-120b` carried from Teleport (llama-3.3-70b

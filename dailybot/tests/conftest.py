@@ -19,6 +19,11 @@ def data_dirs(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ITEMS_DIR", tmp_path / "items")
     monkeypatch.setattr(config, "DAILY_DIR", tmp_path / "daily")
     monkeypatch.setattr(config, "REPORTS_DIR", tmp_path / "reports")
+    # Windows-hardening runtime state (W2/W3b/W4) must also stay out of the real
+    # data/ folder: the lock would block, fired.json would suppress sends.
+    monkeypatch.setattr(config, "LOCK_FILE", tmp_path / ".bot.lock")
+    monkeypatch.setattr(config, "FIRED_FILE", tmp_path / "fired.json")
+    monkeypatch.setattr(config, "HEARTBEAT_FILE", tmp_path / "heartbeat.json")
     (tmp_path / "items").mkdir()
     (tmp_path / "daily").mkdir()
     (tmp_path / "reports").mkdir()
