@@ -13,6 +13,7 @@
  *
  * The chip never blocks anything; it only reports.
  */
+import { useEffect, useState } from 'react';
 import db from './db.js';
 
 /** Is cloud sync configured for this build? */
@@ -60,4 +61,23 @@ export const subscribeSyncStatus = (onChange) => {
   return db.cloud.status.subscribe(onChange);
 };
 
-export default { isSyncEnabled, getSyncInfo, syncStatusLabel, subscribeSyncStatus };
+/**
+ * React hook for screens that must explain whether cloud-backed behaviour is
+ * available. `canSync` is the gate the stock module asks for (it would drive the
+ * Telegram low-stock ping); it is false on a local-only build, which is the
+ * honest answer rather than an error.
+ */
+export const useSyncStatus = () => {
+  const [info, setInfo] = useState(isSyncEnabled() ? getSyncInfo() : null);
+
+  useEffect(() => {
+    if (!isSyncEnabled()) return undefined;
+    setInfo(getSyncInfo());
+    const unsubscribe = subscribeSyncStatus(() => setInfo(getSyncInfo()));
+    return () => { if (typeof unsubscribe === 'function') unsubscribe(); };
+  }, []);
+
+  return { canSync: isSyncEnabled(), info, label: syncStatusLabel(info) };
+};
+
+export default { isSyncEnabled, getSyncInfo, syncStatusLabel, subscribeSyncStatus, useSyncStatus };

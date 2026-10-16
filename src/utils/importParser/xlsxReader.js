@@ -48,12 +48,17 @@ const cv = (row, idx) => {
 
 const isAggregate = (joined) => /material\s*total|subtotal/i.test(joined) && !/[a-z]{3,}\s+[a-z]{3,}/i.test(joined.split(/material\s*total|subtotal/i)[0]);
 
-/** Find header row index: row containing Item + a Qty-like column. */
+/** Find header row index: row containing an item-like column + a Qty-like column.
+ *
+ *  "Item-like" must accept the newer Agent exports whose only item column is
+ *  named "Canonical Name / Spec" (no column contains the word "Item" at all —
+ *  the Masjid Asy-Syakirin export, 15 Oct 2026). Requiring the literal word
+ *  "item" silently produced zero BOM rows for those files. */
 const findHeaderRow = (rows, extraSignals) => {
   for (let r = 0; r < Math.min(rows.length, 15); r++) {
     const cells = rows[r].map((c) => H(c));
     const joined = cells.join(' ');
-    const hasItem = /item/.test(joined);
+    const hasItem = /item|canonical|description/.test(joined);
     const hasQty = /qty|quantity|amount/.test(joined);
     if (hasItem && hasQty) {
       if (!extraSignals || extraSignals.test(joined)) return r;
@@ -71,8 +76,9 @@ const parseBomSheet = (rows) => {
     category: colFind(header, [/^system/, /^category/]),
     // Agent exports may use the more descriptive "Item / Canonical Name".
     // Keep Item as the leading, unambiguous signal without mistaking an ID
-    // column for the BOM item name.
-    item: colFind(header, [/^item\b/]),
+    // column for the BOM item name. "Canonical Name / Spec" (one combined
+    // column) is the other naming this system ships.
+    item: colFind(header, [/^item\b/, /^canonical\b/, /^description\b/]),
     spec: colFind(header, [/\bspec\b/]),
     unit: colFind(header, [/^unit$/]),
     netQty: colFind(header, [/net qty/]),
@@ -80,11 +86,16 @@ const parseBomSheet = (rows) => {
     purchaseQty: colFind(header, [/purchase qty/, /order qty/]),
     unitCost: colFind(header, [/unit cost/, /unit price/]),
     estTotal: colFind(header, [/est total/]),
-    basis: colFind(header, [/^basis$/]),
+    basis: colFind(header, [/^basis/]),
     confidence: colFind(header, [/confidence/]),
-    pack: colFind(header, [/^pack$/]),
+    pack: colFind(header, [/^pack$/, /^purchase pack$/]),
     notes: colFind(header, [/\bnotes?\b/, /reason/]),
   };
+  // "Canonical Name / Spec" is one column holding name and spec together: it
+  // must feed item only. Pointing spec at the same column would duplicate the
+  // name into spec (and double it in the item+spec dedupe key). Splitting the
+  // cell on a dash would be guessing, which this parser never does.
+  if (idx.spec === idx.item) idx.spec = -1;
   if (idx.item < 0) return [];
   const out = [];
   for (let r = hIdx + 1; r < rows.length; r++) {

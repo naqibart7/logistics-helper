@@ -57,7 +57,7 @@ const reimportDeps = {
   getSupplier: supplierRepo.getSupplier,
 };
 
-export default function ProjectsScreen({ onOpenProject }) {
+export default function ProjectsScreen({ onOpenProject, onOpenStock }) {
   const [projects, setProjects] = useState([]);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -168,6 +168,22 @@ export default function ProjectsScreen({ onOpenProject }) {
       {status && (
         <div className="banner notice" role="status">
           {status}
+        </div>
+      )}
+
+      {/* Stock lives here, not in the project tab bar: it is a live inventory
+          record across all projects (arrivals, issues, recounts), so it is its
+          own screen rather than a project section (user request 15 Oct 2026). */}
+      {onOpenStock && (
+        <div className="card stock-entry-card">
+          <h2>Stock &amp; Inventory</h2>
+          <p className="muted" style={{ margin: '0.5rem 0' }}>
+            Live workshop record: what has arrived, what projects have taken, and physical
+            recounts. Balances are predicted from those movements — never typed over.
+          </p>
+          <div className="action-row">
+            <button onClick={onOpenStock}>Open stock ledger</button>
+          </div>
         </div>
       )}
 

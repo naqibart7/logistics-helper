@@ -133,6 +133,120 @@ describe('parser acceptance: canonical-name xlsx BOM header', () => {
   });
 });
 
+describe('parser acceptance: combined "Canonical Name / Spec" header (synthetic)', () => {
+  it('imports a Master BOM whose only item column is Canonical Name / Spec', () => {
+    // The shape that produced an empty BOM tab: no column contains the word
+    // "Item", name and spec share one column, and the price columns are absent.
+    const book = XLSX.utils.book_new();
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['MASTER / RECONCILIATION BOM — MASJID ASY SYAKIRIN, PUCHONG (REV 2 DSG B)'],
+      [],
+      ['ID', 'System / Area', 'Canonical Name / Spec', 'Unit', 'Net Qty', 'Wastage %',
+        'Wastage Applied', 'Purchase Qty', 'Purchase Pack', 'Basis / Method', 'Confidence', 'Notes / Flags'],
+      ['A1-01', 'Mihrab (A1)', 'PVC 10mm Panel – JOTUN Matt 0001 White', 'sqft', 61.02, 0.12, 7.32, 68.34,
+        '14 sheets', 'Area + 12% wastage', 'High', 'From quotation'],
+      ['', '', '', '', '', '', '', '', '', '', '', ''],
+      ['S-10', 'Scaffolding & Access', 'Temporary Scaffolding', 'set', 1, 0, 0, 1,
+        '1 rental set', 'Site measure', 'High', ''],
+    ]);
+    XLSX.utils.book_append_sheet(book, sheet, 'A. Master Reconciliation BOM');
+
+    const parsed = parseWorkbook(book);
+    expect(parsed.projectTitle).toBe('MASJID ASY SYAKIRIN');
+    // The blank row is not an item; the row below the "Notes:" position still is.
+    expect(parsed.bomItems).toHaveLength(2);
+    expect(parsed.bomItems[0]).toMatchObject({
+      category: 'Mihrab (A1)',
+      item: 'PVC 10mm Panel – JOTUN Matt 0001 White',
+      // One combined column feeds item only; spec must not duplicate the name.
+      spec: null,
+      unit: 'sqft',
+      netQty: 61.02,
+      wastagePct: 12,
+      purchaseQty: 68.34,
+      confidence: 'High',
+      basis: 'Area + 12% wastage',
+      pack: '14 sheets',
+      notes: 'From quotation',
+    });
+    expect(parsed.bomItems.every((r) => r.spec === null)).toBe(true);
+  });
+});
+
+// The real workbook for this export is kept beside the other fixtures when the
+// working copy has it (it is Naqib's live project data, so it is deliberately
+// not committed). The synthetic test above always runs and covers the same
+// parser path; these tests add the file's exact counts and anchors locally.
+const masjidPath = path.join(dir, 'fixtures/Masjid_Asy_Syakirin_Puchong_BOM_151026.xlsx');
+const describeWithMasjid = fs.existsSync(masjidPath) ? describe : describe.skip;
+
+describeWithMasjid('Masjid Asy-Syakirin export (real workbook, local fixture)', () => {
+  // Real export (15 Oct 2026) from the v3.1 pipeline. Its Master BOM has no
+  // column containing the word "Item" — the name column is "Canonical Name /
+  // Spec" — so header detection that insisted on "item" produced ZERO BOM rows
+  // and an empty BOM tab for this project. 57 data rows: one blank row and one
+  // "Notes: …" row are not items, so 55.
+  const parseMasjid = async () => {
+    const buf = fs.readFileSync(masjidPath);
+    return parseXlsx(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  };
+
+  it('imports all 55 BOM lines instead of nothing', async () => {
+    const parsed = await parseMasjid();
+    expect(parsed.bomItems).toHaveLength(55);
+    expect(parsed.shortageConfirmItems).toHaveLength(8);
+    expect(parsed.supplierEntries).toHaveLength(13);
+    expect(parsed.changeLogFromAgent).toHaveLength(8);
+  });
+
+  it('keeps the project name and leaves location null (no explicit Project: line)', async () => {
+    const parsed = await parseMasjid();
+    // Title row: "MASTER / RECONCILIATION BOM — Masjid Asy Syakirin, Puchong (REV 2 DSG B)".
+    // The comma tail ("Puchong …") is a location, not part of the name.
+    expect(parsed.projectTitle).toBe('MASJID ASY SYAKIRIN');
+    expect(parsed.location).toBeNull();
+  });
+
+  it('maps the combined name column to item only — spec stays null, never duplicated', async () => {
+    const parsed = await parseMasjid();
+    expect(parsed.bomItems.every((r) => r.spec === null)).toBe(true);
+
+    const panel = parsed.bomItems.find((r) => r.item.startsWith('PVC 10mm Panel'));
+    expect(panel).toMatchObject({
+      category: 'Mihrab (A1)',
+      unit: 'sqft',
+      netQty: 61.02,
+      purchaseQty: 68.34,
+      wastagePct: 12, // stored as the 0.12 fraction in the sheet
+      confidence: 'High',
+      basis: 'Area + 12% wastage (nesting preferred)',
+      pack: '14 sheets (approx 32 sqft std)',
+      notes: 'From quotation measurement; split by colour',
+    });
+  });
+
+  it('reads every real column, including the trailing row after the Notes row', async () => {
+    const parsed = await parseMasjid();
+    // Sheet order ends: r58 blank, r59 "Notes: …", r60 the S-10 scaffolding row.
+    const scaffolding = parsed.bomItems.find((r) => /Temporary Scaffolding/i.test(r.item));
+    expect(scaffolding).toBeTruthy();
+    expect(scaffolding.category).toBe('Scaffolding & Access');
+    expect(scaffolding.purchaseQty).toBe(1);
+    // Non-item rows must not leak in as products.
+    expect(parsed.bomItems.some((r) => /^notes?:/i.test(r.item || ''))).toBe(false);
+    expect(parsed.bomItems.some((r) => /material\s*total/i.test(r.item || ''))).toBe(false);
+    expect(parsed.bomItems.every((r) => r.item && r.item.length > 1)).toBe(true);
+  });
+
+  it('documents that this export carries no price columns (pricing lives in sheet B)', async () => {
+    const parsed = await parseMasjid();
+    // Not a parser defect: the Master BOM has 12 columns and none is a price.
+    // Un-costed rows are null, never 0 — so the BOM tab shows TBD, not RM 0.00.
+    expect(parsed.bomItems.every((r) => r.unitCost === null && r.estTotal === null)).toBe(true);
+    expect(parsed.bomItems.every((r) => r.purchaseQty !== null || r.netQty !== null)).toBe(true);
+  });
+});
+
 describe('Task N regression: real inverted-order file with comma-less Master title', () => {
   const hashimaPath = path.join(dir, 'fixtures/Artseven_BOM_Q260163_Kediaman_Puan_Hashima_v2.xlsx');
 

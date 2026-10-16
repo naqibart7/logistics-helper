@@ -1,9 +1,14 @@
 /**
  * App.jsx — Logistics Helper v3 (multi-agent pipeline shell).
  *
- * Entry screen (outside any project): Projects list.
+ * Entry screen (outside any project): Projects list, plus the Stock ledger.
  * Inside an open project, bottom tab bar: Dashboard | BOM | Confirm | Suppliers | PO.
  * Text labels (no emoji); Confirm carries a live open-count badge.
+ *
+ * Stock is deliberately NOT a project tab: it is a live inventory record
+ * (arrivals, what projects take, physical recounts) that spans all projects.
+ * It renders as its own screen outside the project shell, so the project tab
+ * bar stays project-scoped.
  *
  * Lane 1B: BOM tab also exposes a "+ Add item" route → AddItemScreen. It's a
  * project-level sub-screen (keeps projectId context). Back returns to BOM.
@@ -17,6 +22,7 @@ import ConfirmScreen from './screens/ConfirmScreen.jsx';
 import SuppliersScreen from './screens/SuppliersScreen.jsx';
 import PoScreen from './screens/PoScreen.jsx';
 import AddItemScreen from './screens/AddItemScreen.jsx';
+import StockScreen from './screens/StockScreen.jsx';
 import { resolveTabRequest } from './screens/poGate.js';
 import { countUnresolved } from './data/shortageRepo.js';
 import { seedInitialSuppliers } from './data/db.js';
@@ -30,7 +36,6 @@ const TABS = [
   { id: 'confirm', label: 'Confirm', short: 'Cfm' },
   { id: 'suppliers', label: 'Suppliers', short: 'Supp' },
   { id: 'po', label: 'PO', short: 'PO' },
-  { id: 'stock', label: 'Stock', short: 'Stock' },
 ];
 
 const manualAddDeps = {
@@ -43,6 +48,9 @@ const manualAddDeps = {
 export default function App() {
   const [projectId, setProjectId] = useState(null);
   const [tab, setTab] = useState('dashboard');
+  // Which screen the app shows while no project is open: the projects list or
+  // the standalone stock ledger. Kept separate from `tab` (project sections).
+  const [homeView, setHomeView] = useState('projects');
   // Lane 1B: subScreen = null | 'addItem'. Stacks on top of BOM so we can
   // "return" to BOM after adding without losing project/tab state.
   const [subScreen, setSubScreen] = useState(null);
@@ -89,8 +97,25 @@ export default function App() {
     setTab(wanted);
   };
 
+  if (!projectId && homeView === 'stock') {
+    return (
+      <div className="app-shell">
+        <StockScreen />
+        <nav className="tab-bar" aria-label="App sections">
+          <button onClick={() => setHomeView('projects')}>Projects</button>
+          <button className="active" aria-current="page">Stock</button>
+        </nav>
+      </div>
+    );
+  }
+
   if (!projectId) {
-    return <ProjectsScreen onOpenProject={(id) => { setProjectId(id); setTab('dashboard'); }} />;
+    return (
+      <ProjectsScreen
+        onOpenProject={(id) => { setProjectId(id); setTab('dashboard'); setHomeView('projects'); }}
+        onOpenStock={() => setHomeView('stock')}
+      />
+    );
   }
 
   // Lane 1B: AddItem sub-screen. Stays inside project shell, renders above tabs.
@@ -108,7 +133,7 @@ export default function App() {
           }}
         />
         <nav className="tab-bar" aria-label="Project sections">
-          <button onClick={() => { setProjectId(null); setTab('dashboard'); setSubScreen(null); }}>
+          <button onClick={() => { setProjectId(null); setTab('dashboard'); setSubScreen(null); setHomeView('projects'); }}>
             Projects
           </button>
           {TABS.map((t) => (
@@ -158,7 +183,6 @@ export default function App() {
       {tab === 'confirm' && <ConfirmScreen projectId={projectId} onChanged={() => refreshGate(projectId)} />}
       {tab === 'suppliers' && <SuppliersScreen projectId={projectId} />}
       {tab === 'po' && <PoScreen projectId={projectId} onGoConfirm={() => setTab('confirm')} />}
-      {tab === 'stock' && <StockScreen projectId={projectId} />}
 
       {/* Lane 2: visible sync state — reports, never blocks. Fixed above the tab bar. */}
       <div
@@ -176,7 +200,7 @@ export default function App() {
       </div>
 
       <nav className="tab-bar" aria-label="Project sections">
-        <button onClick={() => { setProjectId(null); setTab('dashboard'); }}>
+        <button onClick={() => { setProjectId(null); setTab('dashboard'); setHomeView('projects'); }}>
           Projects
         </button>
         {TABS.map((t) => (

@@ -30,10 +30,11 @@ import { useSyncStatus } from '../data/syncStatus.js';
 import { listSuppliers } from '../data/supplierRepo.js';
 import { listProjects } from '../data/projectRepo.js';
 
+// App stylesheet classes (index.css) — this screen has no Tailwind dependency.
 const STOCK_THRESHOLD_CLASSES = {
-  critical: 'bg-red-100 text-red-800',
-  warning: 'bg-yellow-100 text-yellow-800',
-  OK: 'bg-green-100 text-green-800',
+  critical: 'stock-status-critical',
+  warning: 'stock-status-warning',
+  OK: 'stock-status-ok',
 };
 
 const StockScreen = () => {
