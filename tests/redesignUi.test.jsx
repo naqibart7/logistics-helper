@@ -104,12 +104,14 @@ describe('redesign contracts', () => {
     const project = await createProject({ name: 'CLIENT PROBE' });
     const ui = render(<DashboardScreen projectId={project.id} onGoConfirm={() => {}} />);
     await ui.findByText('CLIENT PROBE');
-    ui.getByText('—'); // unset client renders graceful blank
+    // The client block is filled from Dexie after the header renders: a bare
+    // getByText here raced that read and failed once under parallel load.
+    await ui.findByText('—', {}, { timeout: 5000 }); // unset client renders graceful blank
     fireEvent.change(ui.getByLabelText(/Client/), { target: { value: 'TUAN DIN' } });
     fireEvent.click(ui.getByText('Save client'));
     // Save round-trips Dexie; 5s tolerance under parallel-suite load (proven flake at 1s).
     await ui.findByText('Saved.', {}, { timeout: 5000 });
-    ui.getByText('TUAN DIN');
+    await ui.findByText('TUAN DIN', {}, { timeout: 5000 });
     expect((await getProject(project.id)).client).toBe('TUAN DIN');
     ui.unmount();
   });

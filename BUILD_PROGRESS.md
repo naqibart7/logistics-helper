@@ -798,9 +798,22 @@ blob), so the 17:00 touchpoint failed every weekday the bot ran.
   the token and that writes never introduce a BOM.
 
 ### Verification
-- `npx vitest run` → **37 files, 202 tests, all passing** (was 193 with 2 failing).
-- `npx vite build` → **green** (728 modules, 14.90s).
+- `npx vitest run` → **37 files, 203 tests, all passing** (was 193 with 2 failing).
+- `npx vite build` → **green** (728 modules).
 - `python -m pytest -q` (dailybot) → **110 passed** (was 102).
-- Still open for Naqib: the deployed Vercel build needs this commit pushed/redeployed, after which the same
-  `.xlsx` must be **re-uploaded** — the existing project is empty, and re-importing merges the 55 lines into
-  the matched project (title matching is by name, unchanged).
+- **Browser end-to-end proof** (Edge via `playwright-core` against `vite preview` of the fixed build, fresh
+  IndexedDB): upload the real `.xlsx` → project `MASJID ASY SYAKIRIN`, Dashboard reads *Material lines 55 /
+  To confirm 8 / Suppliers 13*, the BOM tab renders **55 rows** (first row `PVC 10mm Panel – JOTUN Matt 0001
+  White`, Qty 68.34, "Check" badge; the trailing scaffolding row present), the project tab bar has exactly
+  **6 buttons with no Stock**, and "Open stock ledger" opens a screen whose nav is only *Projects | Stock*.
+  Screenshots kept locally in `docs/screenshots/` (not committed — same reason as the workbook).
+- **Tab-bar hover bug found by that screenshot**: `button:not([disabled]):hover` (specificity 0,2,1) outranks
+  `.tab-bar button`, so any hovered/tapped tab painted itself `--primary-dark` while its label stayed
+  `--primary` — a blank blue block (on a phone a tap leaves `:hover` stuck). Reset rule added for the tab bar
+  and pinned by a stylesheet-contract test.
+- **Still open for Naqib**: the deployed Vercel build has not rebuilt (checked twice, ~15 min apart: the live
+  site still serves `index-D2o8PMvh.css`, the pre-fix bundle). This machine has no Vercel credentials, so it
+  needs a dashboard Redeploy or `npx vercel --prod` on a logged-in machine. After that, **delete the empty
+  `MASJID ASY SYAKIRIN` project and upload the file fresh** — do not re-import into it: the merge engine queues
+  unmatched rows as `new_item_pending` and adds nothing to the BOM (55 one-by-one approvals), whereas a fresh
+  import writes all 55 lines immediately.

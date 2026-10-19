@@ -19,6 +19,9 @@ node_modules/
 # file is absent; the synthetic test for the same header shape always runs.
 /tests/fixtures/Masjid_Asy_Syakirin_Puchong_BOM_151026.xlsx
 
+# Browser-proof screenshots from the verification runs (not published).
+/docs/screenshots/
+
 # IDE files
 .vscode/
 .idea/
