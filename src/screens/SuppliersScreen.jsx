@@ -8,6 +8,12 @@
  * B1. Add / edit / delete in-app (dedupe on add, delete blocked when linked).
  * B2. One-tap WhatsApp & Call with phone normalisation and 'Fix number' fallback.
  * B3. Verified date badge per supplier ("Verified 14 Oct").
+ *
+ * H1: `projectId` is optional. Without one this is the top-level Supplier Hub —
+ * the same component and the same directory, minus everything that only means
+ * "linked to THIS project" (the split list, Link/Unlink, browse toggle). Delete
+ * stays blocked by any project link because that rule is about the directory,
+ * not the open project.
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -46,7 +52,9 @@ const matchesQuery = (s, q) => {
     .some((f) => String(f || '').toLowerCase().includes(query));
 };
 
-export default function SuppliersScreen({ projectId }) {
+export default function SuppliersScreen({ projectId, onOpenDirectory }) {
+  // Hub mode: no project open, so there are no project links to read or offer.
+  const hubMode = !projectId;
   const [rows, setRows] = useState([]);
   const [browsing, setBrowsing] = useState(false);
   const [directory, setDirectory] = useState([]);
@@ -69,6 +77,7 @@ export default function SuppliersScreen({ projectId }) {
   });
 
   const reloadLinks = async () => {
+    if (hubMode) return; // no project open: nothing can be linked to it
     const links = await listProjectSuppliers(projectId);
     const joined = (
       await Promise.all(
@@ -82,7 +91,12 @@ export default function SuppliersScreen({ projectId }) {
     setLinkedIds(new Set(links.map((l) => l.globalSupplierId)));
   };
 
-  useEffect(() => { reloadLinks(); }, [projectId]);
+  useEffect(() => {
+    reloadLinks();
+    // In hub mode the directory IS the screen, so load it on mount instead of
+    // waiting for the project-mode "Browse All Suppliers" tap.
+    if (hubMode) listSuppliers().then(setDirectory);
+  }, [projectId]);
 
   const openBrowser = async () => {
     setNotice(null);
@@ -153,7 +167,7 @@ export default function SuppliersScreen({ projectId }) {
     setPendingCsv(null);
     setOverwrite(false);
     await reloadLinks();
-    if (browsing) setDirectory(await listSuppliers());
+    if (hubMode || browsing) setDirectory(await listSuppliers());
   };
 
   // B1: In-app Add Supplier
@@ -204,11 +218,19 @@ export default function SuppliersScreen({ projectId }) {
           note: form.note.trim() || null,
           logisticsNote: form.note.trim() || null,
         };
-        const s = await linkSupplierEntry(projectId, payload, linkDeps);
-        setNotice(`Supplier "${s.businessName}" saved and linked.`);
+        // Hub mode has no project to link to, so add is a plain directory write;
+        // project mode keeps the dedupe-and-link rule (supplierLinking.js).
+        const s = hubMode
+          ? await createSupplier(payload)
+          : await linkSupplierEntry(projectId, payload, linkDeps);
+        setNotice(
+          hubMode
+            ? `Supplier "${s.businessName}" saved to the directory.`
+            : `Supplier "${s.businessName}" saved and linked.`
+        );
         setModal(null);
         await reloadLinks();
-        if (browsing) setDirectory(await listSuppliers());
+        if (hubMode || browsing) setDirectory(await listSuppliers());
       } catch (err) {
         setNotice(`Add failed: ${err.message}`);
       }
@@ -226,7 +248,7 @@ export default function SuppliersScreen({ projectId }) {
         setNotice(`Saved changes to "${form.businessName.trim()}".`);
         setModal(null);
         await reloadLinks();
-        if (browsing) setDirectory(await listSuppliers());
+        if (hubMode || browsing) setDirectory(await listSuppliers());
       } catch (err) {
         setNotice(`Update failed: ${err.message}`);
       }
@@ -245,7 +267,7 @@ export default function SuppliersScreen({ projectId }) {
         await deleteSupplier(supplier.id);
         setNotice(`Deleted "${supplier.businessName}".`);
         await reloadLinks();
-        if (browsing) setDirectory(await listSuppliers());
+        if (hubMode || browsing) setDirectory(await listSuppliers());
       }
     } catch (err) {
       setNotice(`Delete failed: ${err.message}`);
@@ -257,7 +279,7 @@ export default function SuppliersScreen({ projectId }) {
     setNotice('Removed link to this project.');
     setModal(null);
     await reloadLinks();
-    if (browsing) setDirectory(await listSuppliers());
+    if (hubMode || browsing) setDirectory(await listSuppliers());
   };
 
   // B3: Verified date toggle
@@ -266,7 +288,7 @@ export default function SuppliersScreen({ projectId }) {
     await updateSupplier(supplier.id, { verifiedDate: next });
     setNotice(next ? `Marked "${supplier.businessName}" as verified.` : `Cleared verification for "${supplier.businessName}".`);
     await reloadLinks();
-    if (browsing) setDirectory(await listSuppliers());
+    if (hubMode || browsing) setDirectory(await listSuppliers());
   };
 
   // Tag chips are data-driven: only tags actually present in the directory appear.
@@ -341,7 +363,8 @@ export default function SuppliersScreen({ projectId }) {
         >
           Delete
         </button>
-        {browsing && (
+        {/* Project-link affordance: never in hub mode — there is no "this project". */}
+        {!hubMode && browsing && (
           <button
             disabled={isLinked}
             onClick={() => linkRow(s)}
@@ -356,7 +379,8 @@ export default function SuppliersScreen({ projectId }) {
 
   return (
     <div className="container">
-      <h1>Suppliers ({rows.length})</h1>
+      {/* Hub mode counts the directory; project mode counts this project's links. */}
+      <h1>{hubMode ? `Supplier Hub (${directory.length})` : `Suppliers (${rows.length})`}</h1>
       {notice && <div className="card" role="status" style={{ margin: '0.5rem 0' }}>{notice}</div>}
 
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
@@ -365,6 +389,10 @@ export default function SuppliersScreen({ projectId }) {
         <button className="secondary" onClick={() => document.getElementById('csv-file-input').click()}>
           Import CSV
         </button>
+        {/* Project mode only: the hub is the same screen without a project. */}
+        {!hubMode && onOpenDirectory && (
+          <button className="secondary" onClick={onOpenDirectory}>Open supplier directory</button>
+        )}
         <input
           id="csv-file-input"
           type="file"
@@ -459,9 +487,12 @@ export default function SuppliersScreen({ projectId }) {
             Suppliers linked to projects cannot be deleted from the directory to prevent orphan data.
           </p>
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-            <button onClick={() => handleUnlink(modal.supplier.id)}>
-              Remove link from this project instead
-            </button>
+            {/* Unlink needs an open project; the hub cannot remove another project's link. */}
+            {!hubMode && (
+              <button onClick={() => handleUnlink(modal.supplier.id)}>
+                Remove link from this project instead
+              </button>
+            )}
             <button className="secondary" onClick={() => setModal(null)}>
               Cancel
             </button>
@@ -496,13 +527,15 @@ export default function SuppliersScreen({ projectId }) {
         </div>
       )}
 
-      {!browsing && (
+      {!hubMode && !browsing && (
         <button onClick={openBrowser} style={{ marginBottom: '0.5rem' }}>
           Browse All Suppliers
         </button>
       )}
 
-      {browsing && (
+      {/* Hub mode shows the directory as the screen itself; project mode reveals
+          it on demand so the tab still leads with this project's links. */}
+      {(hubMode || browsing) && (
         <div className="card anim-panel" style={{ marginBottom: '0.5rem' }}>
           <h3>Global Supplier Directory ({visible.length}/{directory.length})</h3>
           <label className="small" htmlFor="supplier-search">Search suppliers</label>
@@ -570,13 +603,15 @@ export default function SuppliersScreen({ projectId }) {
               <p style={{ color: 'var(--text-muted)' }}>No suppliers match.</p>
             )}
           </div>
-          <button onClick={() => setBrowsing(false)} style={{ marginTop: '0.75rem' }}>
-            Back to project suppliers
-          </button>
+          {!hubMode && (
+            <button onClick={() => setBrowsing(false)} style={{ marginTop: '0.75rem' }}>
+              Back to project suppliers
+            </button>
+          )}
         </div>
       )}
 
-      {rows.map(({ link, supplier }) => {
+      {!hubMode && rows.map(({ link, supplier }) => {
         const hasContact = supplier.contact && !/^null$/i.test(String(supplier.contact).trim());
         return (
           <div key={`${link.projectId}-${link.globalSupplierId}`} className="card" style={{ marginBottom: '0.75rem' }}>
@@ -607,7 +642,7 @@ export default function SuppliersScreen({ projectId }) {
           </div>
         );
       })}
-      {rows.length === 0 && (
+      {!hubMode && rows.length === 0 && (
         <p style={{ color: 'var(--text-muted)' }}>No suppliers linked to this project.</p>
       )}
     </div>

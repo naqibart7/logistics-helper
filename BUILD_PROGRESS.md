@@ -817,3 +817,53 @@ blob), so the 17:00 touchpoint failed every weekday the bot ran.
   `MASJID ASY SYAKIRIN` project and upload the file fresh** — do not re-import into it: the merge engine queues
   unmatched rows as `new_item_pending` and adds nothing to the BOM (55 one-by-one approvals), whereas a fresh
   import writes all 55 lines immediately.
+
+---
+
+## Supplier Hub — H0 audit + evidence + H1 ✅ (2026-10-19)
+Source: `TRAE_INSTRUCTION_SUPPLIER_HUB.md`. Full audit, evidence table and decisions: `docs/supplier-hub-audit.md`.
+Reproduce the numbers with `node scripts/supplier_audit.mjs` (it imports the shipping classifier and flag rules).
+
+### H0 — nothing on the instruction's list had to be built twice
+The in-project Suppliers tab already had add / edit / delete (blocked when linked) / WhatsApp / Call /
+tags / verified date / CSV import + export / search / filters. So H1 reuses that component instead of
+building a second directory (the instruction's "one implementation" rule).
+
+### Evidence run — 130 seeded suppliers, and what it changed
+- **96 mobile-capable (74%)**, **33 landline-only (25%)**, **1 unusable (1%)**, 0 no-contact, 0 multi-number.
+- H3: no mobile 33 · malformed 1 · no area/address 8 · possible duplicate 4 · never verified **130 (100%)**.
+  Headline "needs attention" = **45 of 130 (35%)** — never-verified stays out of it, as instructed.
+- **Two premises in the instruction do not hold for this data**: no seeded row holds several numbers
+  (0/130 contain `/ , ; &` or "or"), and none is missing a contact. The split feature is still built and
+  tested with real-shaped fixtures, without claiming a data win.
+- **A real catch**: `LKS KLASSE HOME INTERIOR SDN BHD` has `011345238888` — a 13-digit mobile prefix that
+  `normalizePhoneForWhatsApp` rejects, so it is the 1 of 130 with no Quick Order link today. That is why
+  "malformed" means *nothing in the cell is usable*, and WhatsApp eligibility requires a mobile the
+  normaliser also accepts.
+- "No area or address" is tuned to mean **both blank**: `area` did not exist before H2, so the literal rule
+  would have flagged 130/130 and hidden the real 8.
+
+### H1 — top-level Supplier Hub ✅
+- `SuppliersScreen` is now `({ projectId?, onOpenDirectory? })`: no `projectId` ⇒ hub mode. Same list,
+  same editor, same repo calls; only the "linked to *this* project*" affordances are hidden. Project mode
+  is unchanged.
+- Reached from the Projects screen ("Supplier Hub" card → "Open supplier hub") and from the project
+  Suppliers tab ("Open supplier directory"). Its nav is exactly `Projects | Supplier Hub`, so no two
+  visible tab buttons share a label (project bar keeps "Suppliers").
+- H2/H4 schema groundwork (additive, `contact` untouched): `phones[{number,kind,label}]`, `contactPerson`,
+  `email`, `area`, `status: active|archived`, `mergedInto`; `getSupplier` now follows `mergedInto` so an
+  archived merge loser can never be matched as a live supplier.
+
+### Verification
+- `npx vitest run` → **39 files, 225 tests, all passing** (204 before; +14 logic, +7 hub).
+- `npx vite build` → **green** (728 modules, 4.46s).
+- Browser proof (Edge via `playwright-core`, `vite preview`): Projects screen shows both entry cards and no
+  tab bar; the hub reads "Supplier Hub (130)" with nav `Projects | Supplier Hub`, zero project tabs, the
+  seeded row "Houses Lightings Sdn Bhd" present, search/filter working, project-link affordances absent;
+  "Projects" returns to the list; no browser errors.
+- Screenshot finding for H3: ~120 distinct tag chips fill more than a screen before the first supplier row —
+  the flag chips should become the primary filter and the tag wall capped or collapsed.
+
+### Still open (per the instruction's order)
+H2 editor UI (kind-aware WhatsApp/Call, split proposal on confirm, contact person/email/area/archived) →
+H3 chips + headline → H6 CSV in the hub with new columns appended → H4 duplicate review/merge → H5 usage facts.

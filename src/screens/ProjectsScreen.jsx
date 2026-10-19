@@ -57,7 +57,7 @@ const reimportDeps = {
   getSupplier: supplierRepo.getSupplier,
 };
 
-export default function ProjectsScreen({ onOpenProject, onOpenStock }) {
+export default function ProjectsScreen({ onOpenProject, onOpenStock, onOpenSuppliers }) {
   const [projects, setProjects] = useState([]);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -183,6 +183,21 @@ export default function ProjectsScreen({ onOpenProject, onOpenStock }) {
           </p>
           <div className="action-row">
             <button onClick={onOpenStock}>Open stock ledger</button>
+          </div>
+        </div>
+      )}
+
+      {/* H1: the directory is shared across projects, so it gets its own entry
+          here rather than a sixth project tab. */}
+      {onOpenSuppliers && (
+        <div className="card">
+          <h2>Supplier Hub</h2>
+          <p className="muted" style={{ margin: '0.5rem 0' }}>
+            One place to clean and verify the supplier directory — phone numbers, towns,
+            duplicates. Not tied to a project.
+          </p>
+          <div className="action-row">
+            <button onClick={onOpenSuppliers}>Open supplier hub</button>
           </div>
         </div>
       )}

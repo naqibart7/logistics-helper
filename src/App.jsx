@@ -1,14 +1,19 @@
 /**
  * App.jsx — Logistics Helper v3 (multi-agent pipeline shell).
  *
- * Entry screen (outside any project): Projects list, plus the Stock ledger.
- * Inside an open project, bottom tab bar: Dashboard | BOM | Confirm | Suppliers | PO.
+ * Entry screen (outside any project): Projects list, plus the Stock ledger and
+ * the Supplier Hub. Inside an open project, bottom tab bar:
+ * Dashboard | BOM | Confirm | Suppliers | PO.
  * Text labels (no emoji); Confirm carries a live open-count badge.
  *
  * Stock is deliberately NOT a project tab: it is a live inventory record
  * (arrivals, what projects take, physical recounts) that spans all projects.
  * It renders as its own screen outside the project shell, so the project tab
  * bar stays project-scoped.
+ *
+ * H1: the Supplier Hub is likewise its own screen outside any project — the
+ * same SuppliersScreen with no projectId. Its nav says "Supplier Hub", never
+ * "Suppliers", so no two visible tab buttons share a label.
  *
  * Lane 1B: BOM tab also exposes a "+ Add item" route → AddItemScreen. It's a
  * project-level sub-screen (keeps projectId context). Back returns to BOM.
@@ -48,8 +53,9 @@ const manualAddDeps = {
 export default function App() {
   const [projectId, setProjectId] = useState(null);
   const [tab, setTab] = useState('dashboard');
-  // Which screen the app shows while no project is open: the projects list or
-  // the standalone stock ledger. Kept separate from `tab` (project sections).
+  // Which screen the app shows while no project is open: the projects list, the
+  // standalone stock ledger, or the supplier hub. Kept separate from `tab`
+  // (project sections).
   const [homeView, setHomeView] = useState('projects');
   // Lane 1B: subScreen = null | 'addItem'. Stacks on top of BOM so we can
   // "return" to BOM after adding without losing project/tab state.
@@ -109,11 +115,26 @@ export default function App() {
     );
   }
 
+  // H1: the hub reuses SuppliersScreen with no projectId — one directory
+  // implementation, no drift between the hub and the project tab.
+  if (!projectId && homeView === 'suppliers') {
+    return (
+      <div className="app-shell">
+        <SuppliersScreen />
+        <nav className="tab-bar" aria-label="App sections">
+          <button onClick={() => setHomeView('projects')}>Projects</button>
+          <button className="active" aria-current="page">Supplier Hub</button>
+        </nav>
+      </div>
+    );
+  }
+
   if (!projectId) {
     return (
       <ProjectsScreen
         onOpenProject={(id) => { setProjectId(id); setTab('dashboard'); setHomeView('projects'); }}
         onOpenStock={() => setHomeView('stock')}
+        onOpenSuppliers={() => setHomeView('suppliers')}
       />
     );
   }
@@ -181,7 +202,12 @@ export default function App() {
         />
       )}
       {tab === 'confirm' && <ConfirmScreen projectId={projectId} onChanged={() => refreshGate(projectId)} />}
-      {tab === 'suppliers' && <SuppliersScreen projectId={projectId} />}
+      {tab === 'suppliers' && (
+        <SuppliersScreen
+          projectId={projectId}
+          onOpenDirectory={() => { setProjectId(null); setTab('dashboard'); setHomeView('suppliers'); }}
+        />
+      )}
       {tab === 'po' && <PoScreen projectId={projectId} onGoConfirm={() => setTab('confirm')} />}
 
       {/* Lane 2: visible sync state — reports, never blocks. Fixed above the tab bar. */}

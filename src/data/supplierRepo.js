@@ -1,8 +1,26 @@
 /**
  * supplierRepo.js — Agent 2: CRUD for GlobalSupplier + ProjectSupplierLink.
+ *
+ * Supplier Hub (H2): the row carries additive phone/location/status fields.
+ * `contact` is untouched — Quick Order keeps reading it, and now also has
+ * `phones[]` to prefer the first mobile once the supervisor has filled it.
  */
 import db from './db.js';
 import { generateId } from '../utils/helpers.js';
+
+/** Normalise the additive hub fields so a stored row is always the same shape. */
+const hubFields = (p) => ({
+  phones: Array.isArray(p.phones)
+    ? p.phones
+        .filter((phone) => phone && (phone.number !== null && phone.number !== undefined))
+        .map((phone) => ({ number: phone.number ?? null, kind: phone.kind ?? null, label: phone.label ?? null }))
+    : [],
+  contactPerson: p.contactPerson ?? null,
+  email: p.email ?? null,
+  area: p.area ?? null,
+  status: p.status === 'archived' ? 'archived' : 'active',
+  mergedInto: p.mergedInto ?? null,
+});
 
 export const createSupplier = async (partial) => {
   const row = {
@@ -16,6 +34,7 @@ export const createSupplier = async (partial) => {
     note: partial.note ?? partial.logisticsNote ?? null,
     logisticsNote: partial.logisticsNote ?? partial.note ?? null,
     verifiedDate: partial.verifiedDate ?? null,
+    ...hubFields(partial),
   };
   await db.globalSuppliers.add(row);
   return row;
@@ -33,6 +52,7 @@ export const bulkCreateSuppliers = async (partials) => {
     note: p.note ?? p.logisticsNote ?? null,
     logisticsNote: p.logisticsNote ?? p.note ?? null,
     verifiedDate: p.verifiedDate ?? null,
+    ...hubFields(p),
   }));
   await db.globalSuppliers.bulkAdd(rows);
   return rows;
@@ -40,7 +60,18 @@ export const bulkCreateSuppliers = async (partials) => {
 
 export const listSuppliers = () => db.globalSuppliers.toArray();
 
-export const getSupplier = (id) => db.globalSuppliers.get(id);
+/**
+ * One supplier. Follows `mergedInto` (H4): a duplicate that lost a merge stays
+ * in the table as an archived row, and any read — including
+ * supplierLinking.applyPresetToItem — must resolve to the survivor instead of
+ * the tombstone.
+ */
+export const getSupplier = async (id) => {
+  const row = await db.globalSuppliers.get(id);
+  if (!row || !row.mergedInto) return row;
+  const survivor = await db.globalSuppliers.get(row.mergedInto);
+  return survivor ?? row;
+};
 
 /**
  * Plain full-directory read for CSV export. No filtering, no pagination —

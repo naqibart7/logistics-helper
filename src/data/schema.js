@@ -25,6 +25,18 @@
  *                       confirmationRequired, owner, resolved: bool,
  *                       kind: "agent_question" | "new_item_pending" | "removed_item_pending" }
  * GlobalSupplier    { id, businessName, contact, address, specialty, sourceUrl, tags }
+ *   Supplier Hub (H2/H4) — additive only; `contact` stays the source of truth
+ *   until `phones[]` is filled:
+ *   + phones: [{ number, kind: 'mobile'|'landline'|'unknown', label }] | null
+ *       kind is computed on the national form (src/logic/supplierPhones.js) and
+ *       stored so the hub can show a WhatsApp button only for mobiles.
+ *   + contactPerson, email: string | null
+ *   + area: string | null (town; the seed's CSV had no town field, so `address`
+ *     absorbed it — this is the additive home for the town)
+ *   + status: 'active' | 'archived' (archive instead of delete when linked)
+ *   + mergedInto: string | null (H4 — id of the surviving record; getSupplier
+ *     follows the pointer, so an archived loser can never be matched again by
+ *     supplierLinking's name+address key)
  * ProjectSupplierLink { projectId, globalSupplierId, assignedToItemId? }
  * ChangeLogEntry    { id, projectId, timestamp, actor: "agent" | "supervisor",
  *                     field, oldValue, newValue }
@@ -56,6 +68,12 @@ export const STORES = {
 export const SHORTAGE_KINDS = ['agent_question', 'new_item_pending', 'removed_item_pending'];
 
 export const CHANGELOG_ACTORS = ['agent', 'supervisor'];
+
+/** H2 — a supplier is archived (never hard-deleted) when it is in use. */
+export const SUPPLIER_STATUSES = ['active', 'archived'];
+
+/** H2 — the phone kinds the classifier can produce. */
+export const PHONE_KINDS = ['mobile', 'landline', 'unknown'];
 
 /** Fresh defaults for a new BomItem row (lockedFields always an array). */
 export const defaultBomItem = (partial = {}) => ({
